@@ -1,0 +1,74 @@
+﻿@using System.Data
+@model DataTable
+@{
+    ViewData["Title"] = "Chuyến bay của tôi";
+}
+
+<div class="container my-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h3 class="fw-bold mb-1"><i class="bi bi-briefcase-fill text-primary me-2"></i>Chuyến bay của tôi</h3>
+            <p class="text-muted small mb-0">Quản lý toàn bộ hồ sơ đặt chỗ, thanh toán, xuất hóa đơn VAT và làm thủ tục Check-in.</p>
+        </div>
+        <a asp-controller="Home" asp-action="Index" class="btn btn-sky rounded-pill px-4">
+            <i class="bi bi-plus-lg me-1"></i>Đặt chuyến mới
+        </a>
+    </div>
+
+    @if (Model.Rows.Count == 0)
+    {
+        <div class="card card-modern p-5 text-center">
+            <i class="bi bi-airplane display-4 text-muted mb-3"></i>
+            <h5 class="fw-bold">Bạn chưa có đơn đặt vé nào</h5>
+            <p class="text-muted">Hãy khám phá các đường bay nội địa và đặt chuyến bay đầu tiên ngay hôm nay!</p>
+        </div>
+    }
+    else
+    {
+        <div class="row g-3">
+            @foreach (DataRow r in Model.Rows)
+            {
+                string pnr = r["MaDatCho"].ToString()!;
+                string status = r["TrangThaiDonHang"].ToString()!;
+                string badgeColor = status == "Đã thanh toán" ? "bg-success" : (status == "Đã hủy" ? "bg-danger" : "bg-warning text-dark");
+
+                <div class="col-12">
+                    <div class="card card-modern p-4">
+                        <div class="row align-items-center g-3">
+                            <div class="col-md-4">
+                                <span class="badge bg-primary-subtle text-primary fw-bold fs-6 mb-1">@pnr</span>
+                                <span class="badge @badgeColor ms-1">@status</span>
+                                <div class="small text-muted mt-2">
+                                    Ngày đặt: <strong>@Convert.ToDateTime(r["NgayDat"]).ToString("dd/MM/yyyy HH:mm")</strong>
+                                </div>
+                                @if (r["MaHD"] != DBNull.Value)
+                                {
+                                    <div class="small text-success">Hóa đơn: <strong>@r["MaHD"]</strong> (@r["PhuongThucThanhToan"])</div>
+                                }
+                            </div>
+                            <div class="col-md-4">
+                                <div class="small text-muted">Tổng thanh toán</div>
+                                <div class="fs-4 fw-bold text-danger">@Convert.ToDecimal(r["TongTienSauGiam"]).ToString("N0") VNĐ</div>
+                            </div>
+                            <div class="col-md-4 text-md-end d-flex flex-wrap justify-content-md-end gap-2">
+                                @if (status == "Chờ thanh toán")
+                                {
+                                    <a asp-action="Payment" asp-route-maDatCho="@pnr" class="btn btn-warning btn-sm fw-bold rounded-pill px-3">Thanh toán ngay</a>
+                                }
+                                @if (r["MaHD"] != DBNull.Value)
+                                {
+                                    <a asp-action="Invoice" asp-route-maDatCho="@pnr" class="btn btn-outline-secondary btn-sm rounded-pill px-3">
+                                        <i class="bi bi-printer me-1"></i>Hóa đơn VAT
+                                    </a>
+                                }
+                                <a asp-action="Lookup" asp-route-maDatCho="@pnr" class="btn btn-sky btn-sm rounded-pill px-3">
+                                    Chi tiết / Check-in / Đổi hủy
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>

@@ -1,0 +1,55 @@
+﻿@{
+    ViewData["Title"] = "Đăng nhập hệ thống";
+}
+
+<div class="container my-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6 col-lg-5">
+            <div class="card card-modern p-4 p-md-5">
+                <div class="text-center mb-4">
+                    <i class="bi bi-airplane-engines-fill text-primary display-5"></i>
+                    <h4 class="fw-bold mt-2">Đăng nhập SkyVN Airlines</h4>
+                    <p class="text-muted small">Chọn phân hệ Khách hàng hoặc Nhân viên đại lý</p>
+                </div>
+
+                @if (TempData["Success"] != null)
+                {
+                    <div class="alert alert-success small">@TempData["Success"]</div>
+                }
+                @if (ViewBag.Error != null)
+                {
+                    <div class="alert alert-danger small">@ViewBag.Error</div>
+                }
+
+                <form method="post" asp-action="Login">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small">Đối tượng đăng nhập</label>
+                        <select name="loginType" class="form-select">
+                            <option value="KH">Hành khách (Đặt vé / Tra cứu / Check-in)</option>
+                            <option value="NV">Nhân viên / Quản trị Đại lý (RBAC)</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold small">Email / SĐT (hoặc Tài khoản NV)</label>
+                        <input type="text" name="taiKhoan" class="form-control" placeholder="VD: duyenan@gmail.com hoặc admin" required />
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold small">Mật khẩu</label>
+                        <input type="password" name="matKhau" class="form-control" placeholder="Mặc định dữ liệu mẫu: 123456" required />
+                    </div>
+
+                    <button type="submit" class="btn btn-sky w-100 py-2 rounded-pill">Đăng nhập ngay</button>
+                </form>
+
+                <div class="mt-4 pt-3 border-top small text-muted">
+                    <div class="fw-semibold text-dark mb-1">Tài khoản test nhanh (Mật khẩu: <code>123456</code>):</div>
+                    <div>• Khách hàng: <code>duyenan@gmail.com</code> | <code>ngocnhu@gmail.com</code></div>
+                    <div>• Ban Giám Đốc: <code>admin</code> | Thu ngân: <code>thungan</code></div>
+                    <div>• Bán vé: <code>banve</code> | CSKH: <code>cskh</code></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

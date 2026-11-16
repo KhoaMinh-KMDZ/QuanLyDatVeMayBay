@@ -1,0 +1,459 @@
+﻿@using System.Data
+@using System.Text.Json
+@{
+    ViewData["Title"] = "Trung tâm Điều hành & Thống kê Đại lý";
+    int roleId = Context.Session.GetInt32("RoleID") ?? 0;
+    string roleName = Context.Session.GetString("RoleName") ?? "";
+
+    var dtHang = ViewBag.DoanhThuTheoHang as DataTable;
+    var dtTuyen = ViewBag.TopTuyenBay as DataTable;
+    var dtCB = ViewBag.DanhSachChuyenBay as DataTable;
+    var dtDon = ViewBag.DanhSachDonHang as DataTable;
+    var dtHuyDoi = ViewBag.DanhSachHuyDoi as DataTable;
+    var dtKM = ViewBag.DanhSachKhuyenMai as DataTable;
+    var dtNV = ViewBag.DanhSachNhanVien as DataTable;
+    var dtDG = ViewBag.DanhSachDanhGia as DataTable;
+    var tuyens = ViewBag.TuyenBays as DataTable;
+    var mayBays = ViewBag.MayBays as DataTable;
+
+    // Chuẩn bị dữ liệu JSON cho Chart.js
+    var hangLabels = new List<string>();
+    var hangRevenues = new List<decimal>();
+    if (dtHang != null)
+    {
+        foreach (DataRow r in dtHang.Rows)
+        {
+            hangLabels.Add(r["TenHang"].ToString()!);
+            hangRevenues.Add(Convert.ToDecimal(r["TongDoanhThuVe"]));
+        }
+    }
+
+    var tuyenLabels = new List<string>();
+    var tuyenRevenues = new List<decimal>();
+    if (dtTuyen != null)
+    {
+        foreach (DataRow r in dtTuyen.Rows)
+        {
+            tuyenLabels.Add(r["MaTuyenBay"].ToString()!);
+            tuyenRevenues.Add(Convert.ToDecimal(r["TongDoanhThu"]));
+        }
+    }
+}
+
+<div class="container my-5">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
+        <div>
+            <span class="badge bg-warning text-dark mb-1">PHÂN QUYỀN RBAC: @roleName.ToUpper()</span>
+            <h3 class="fw-bold mb-0">Trung tâm Điều hành & Thống kê Đại lý</h3>
+        </div>
+        <form method="post" asp-action="RunCleanupCursor">
+            <button type="submit" class="btn btn-outline-danger btn-sm rounded-pill">
+                <i class="bi bi-arrow-repeat me-1"></i>Quét hủy đơn quá hạn (SQL Cursor)
+            </button>
+        </form>
+    </div>
+
+    @if (TempData["Success"] != null)
+    {
+        <div class="alert alert-success">@TempData["Success"]</div>
+    }
+    @if (TempData["Error"] != null)
+    {
+        <div class="alert alert-danger">@TempData["Error"]</div>
+    }
+
+    <!-- 4 THẺ KPI TỔNG QUAN -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card card-modern kpi-card p-3 border-start border-4 border-success">
+                <div class="small text-muted fw-semibold">TỔNG DOANH THU HÓA ĐƠN</div>
+                <div class="fs-4 fw-bold text-success mt-1">@Convert.ToDecimal(ViewBag.TongDoanhThu).ToString("N0")đ</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card card-modern kpi-card p-3 border-start border-4 border-primary">
+                <div class="small text-muted fw-semibold">VÉ XUẤT / CHECK-IN</div>
+                <div class="fs-4 fw-bold text-primary mt-1">@ViewBag.TongVeDaBan vé</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card card-modern kpi-card p-3 border-start border-4 border-warning">
+                <div class="small text-muted fw-semibold">CHUYẾN BAY ĐANG MỞ BÁN</div>
+                <div class="fs-4 fw-bold text-dark mt-1">@ViewBag.SoChuyenMoBan chuyến</div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card card-modern kpi-card p-3 border-start border-4 border-info">
+                <div class="small text-muted fw-semibold">KHÁCH HÀNG THÀNH VIÊN</div>
+                <div class="fs-4 fw-bold text-info mt-1">@ViewBag.TongKhachHang hồ sơ</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TAB ĐIỀU HƯỚNG NGHIỆP VỤ -->
+    <ul class="nav nav-pills mb-4 gap-2" role="tablist">
+        <li class="nav-item"><button class="nav-link active" data-bs-toggle="pill" data-bs-target="#tab-report">1. Biểu đồ & Báo cáo (UC09)</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-orders">2. Đơn đặt chỗ & Thu ngân (UC03/04)</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-refunds">3. Hoàn / Đổi vé (UC05/06)</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-flights">4. Lịch bay (UC12)</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-promos">5. Khuyến mãi (UC13)</button></li>
+        <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-reviews">6. Đánh giá (UC08)</button></li>
+        @if (roleId == 1)
+        {
+            <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-staff">7. Nhân sự (UC14)</button></li>
+        }
+    </ul>
+
+    <div class="tab-content">
+        <!-- TAB 1: BIỂU ĐỒ & BÁO CÁO -->
+        <div class="tab-pane fade show active" id="tab-report">
+            <div class="row g-4 mb-4">
+                <div class="col-lg-6">
+                    <div class="card card-modern p-4 h-100">
+                        <h6 class="fw-bold mb-3"><i class="bi bi-pie-chart-fill text-primary me-2"></i>Tỷ trọng Doanh thu theo Hãng Hàng Không</h6>
+                        <div style="max-height: 260px;" class="d-flex justify-content-center">
+                            <canvas id="airlineChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="card card-modern p-4 h-100">
+                        <h6 class="fw-bold mb-3"><i class="bi bi-bar-chart-line-fill text-danger me-2"></i>Doanh thu Top Tuyến Bay Nội Địa</h6>
+                        <div style="max-height: 260px;">
+                            <canvas id="routeChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row g-4">
+                <div class="col-lg-6">
+                    <div class="card card-modern p-4 h-100">
+                        <h6 class="fw-bold mb-3">Bảng chi tiết Doanh thu Hãng bay</h6>
+                        <table class="table table-hover align-middle small">
+                            <thead class="table-light">
+                                <tr><th>Mã</th><th>Hãng hàng không</th><th class="text-center">Số vé</th><th class="text-end">Doanh thu</th></tr>
+                            </thead>
+                            <tbody>
+                                @if (dtHang != null)
+                                {
+                                    foreach (DataRow r in dtHang.Rows)
+                                    {
+                                        <tr>
+                                            <td class="fw-bold">@r["MaHang"]</td>
+                                            <td>@r["TenHang"]</td>
+                                            <td class="text-center"><span class="badge bg-primary">@r["TongSoVeDaBan"]</span></td>
+                                            <td class="text-end fw-bold text-success">@Convert.ToDecimal(r["TongDoanhThuVe"]).ToString("N0") VNĐ</td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="card card-modern p-4 h-100">
+                        <h6 class="fw-bold mb-3">Bảng xếp hạng Tuyến bay</h6>
+                        <table class="table table-hover align-middle small">
+                            <thead class="table-light">
+                                <tr><th>Tuyến</th><th>Chặng bay</th><th class="text-center">Số vé</th><th class="text-end">Doanh thu</th></tr>
+                            </thead>
+                            <tbody>
+                                @if (dtTuyen != null)
+                                {
+                                    foreach (DataRow r in dtTuyen.Rows)
+                                    {
+                                        <tr>
+                                            <td class="fw-bold">@r["MaTuyenBay"]</td>
+                                            <td>@r["ChangBay"]</td>
+                                            <td class="text-center">@r["SoLuongVeBan"]</td>
+                                            <td class="text-end fw-bold text-danger">@Convert.ToDecimal(r["TongDoanhThu"]).ToString("N0") VNĐ</td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 2: ĐƠN ĐẶT CHỖ -->
+        <div class="tab-pane fade" id="tab-orders">
+            <div class="card card-modern p-4">
+                <h5 class="fw-bold mb-3">Danh sách Hồ sơ Đặt chỗ & Hóa đơn</h5>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle small">
+                        <thead class="table-light">
+                            <tr><th>Mã PNR</th><th>Khách hàng</th><th>Tổng thanh toán</th><th>Trạng thái</th><th>Hóa đơn</th><th>Thao tác</th></tr>
+                        </thead>
+                        <tbody>
+                            @if (dtDon != null)
+                            {
+                                foreach (DataRow r in dtDon.Rows)
+                                {
+                                    <tr>
+                                        <td class="fw-bold text-primary">@r["MaDatCho"]</td>
+                                        <td>@r["TenKH"] (@r["SDT"])</td>
+                                        <td class="fw-bold">@Convert.ToDecimal(r["TongTienSauGiam"]).ToString("N0")đ</td>
+                                        <td><span class="badge bg-info text-dark">@r["TrangThaiDonHang"]</span></td>
+                                        <td>@(r["MaHD"] == DBNull.Value ? "-" : $"{r["MaHD"]} ({r["PhuongThucThanhToan"]})")</td>
+                                        <td>
+                                            <a asp-controller="Booking" asp-action="Lookup" asp-route-maDatCho="@r["MaDatCho"]" class="btn btn-sm btn-outline-primary">Xử lý</a>
+                                            @if (r["MaHD"] != DBNull.Value)
+                                            {
+                                                <a asp-controller="Booking" asp-action="Invoice" asp-route-maDatCho="@r["MaDatCho"]" class="btn btn-sm btn-outline-dark">In HĐ</a>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 3: HOÀN / ĐỔI VÉ -->
+        <div class="tab-pane fade" id="tab-refunds">
+            <div class="card card-modern p-4">
+                <h5 class="fw-bold mb-3">Nhật ký Hủy vé (Luật 72h) & Đổi chuyến</h5>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle small">
+                        <thead class="table-light">
+                            <tr><th>Mã YC</th><th>Mã Vé</th><th>Loại</th><th>Lý do</th><th>Tỷ lệ hoàn</th><th>Tiền hoàn</th><th>Phí phạt/Đổi</th><th>Trạng thái</th></tr>
+                        </thead>
+                        <tbody>
+                            @if (dtHuyDoi != null)
+                            {
+                                foreach (DataRow r in dtHuyDoi.Rows)
+                                {
+                                    <tr>
+                                        <td>#@r["MaYeuCau"]</td>
+                                        <td class="fw-bold">@r["MaVe"]</td>
+                                        <td><span class="badge bg-secondary">@r["LoaiYeuCau"]</span></td>
+                                        <td>@r["LyDo"]</td>
+                                        <td>@r["PhanTramHoan"]%</td>
+                                        <td class="text-success fw-bold">@Convert.ToDecimal(r["SoTienHoan"]).ToString("N0")đ</td>
+                                        <td class="text-danger">@Convert.ToDecimal(r["PhiPhat"]).ToString("N0")đ</td>
+                                        <td><span class="badge bg-success">@r["TrangThai"]</span></td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 4: QUẢN LÝ LỊCH BAY -->
+        <div class="tab-pane fade" id="tab-flights">
+            @if (roleId == 1)
+            {
+                <div class="card card-modern p-4 mb-4">
+                    <h6 class="fw-bold text-primary mb-3"><i class="bi bi-plus-circle-fill me-1"></i>Mở lịch chuyến bay mới</h6>
+                    <form method="post" asp-action="AddFlight" class="row g-2 align-items-end">
+                        <div class="col-md-2"><label class="form-label small">Mã chuyến</label><input type="text" name="maChuyenBay" class="form-control form-control-sm" placeholder="VN999" required /></div>
+                        <div class="col-md-2"><label class="form-label small">Tuyến bay</label><select name="maTuyenBay" class="form-select form-select-sm">@if (tuyens != null) { foreach (DataRow t in tuyens.Rows) {
+                        <option value="@t["MaTuyenBay"]">@t["MaTuyenBay"]</option>
+                    } }
+</select></div>
+                    <div class="col-md-2"><label class="form-label small">Tàu bay</label><select name="maMayBay" class="form-select form-select-sm">@if (mayBays != null) { foreach (DataRow m in mayBays.Rows) {
+                    <option value="@m["MaMayBay"]">@m["MaMayBay"] (@m["MaHang"])</option>
+                                        } }
+</select></div>
+                    <div class="col-md-2"><label class="form-label small">Giờ cất cánh</label><input type="datetime-local" name="ngayGioBay" class="form-control form-control-sm" value="2027-01-10T08:00" required /></div>
+                    <div class="col-md-2"><label class="form-label small">Giờ hạ cánh</label><input type="datetime-local" name="ngayGioDenDK" class="form-control form-control-sm" value="2027-01-10T10:15" required /></div>
+                    <div class="col-md-2"><label class="form-label small">Giá cơ bản</label><div class="input-group input-group-sm"><input type="number" name="giaVeCoBan" class="form-control" value="1350000" step="50000" required /><button type="submit" class="btn btn-primary">Thêm</button></div></div>
+                </form>
+            </div>
+                        }
+
+            <div class="card card-modern p-4">
+                <h5 class="fw-bold mb-3">Danh mục Lịch bay toàn hệ thống</h5>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle small">
+                        <thead class="table-light">
+                            <tr><th>Mã CB</th><th>Hãng</th><th>Hành trình</th><th>Giờ bay</th><th>Giá cơ bản</th><th>Ghế trống</th><th>Trạng thái</th></tr>
+                        </thead>
+                        <tbody>
+                            @if (dtCB != null)
+                            {
+                                foreach (DataRow r in dtCB.Rows)
+                                {
+                                    <tr>
+                                        <td class="fw-bold">@r["MaChuyenBay"]</td>
+                                        <td>@r["TenHangHangKhong"]</td>
+                                        <td>@r["MaSanBayDi"] → @r["MaSanBayDen"]</td>
+                                        <td>@Convert.ToDateTime(r["NgayGioBay"]).ToString("HH:mm dd/MM/yyyy")</td>
+                                        <td class="fw-bold text-danger">@Convert.ToDecimal(r["GiaVeCoBan"]).ToString("N0")đ</td>
+                                        <td>@r["SoGheTrong"] / @r["TongSoGhe"]</td>
+                                        <td><span class="badge bg-success">@r["TrangThaiChuyenBay"]</span></td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- TAB 5: KHUYẾN MÃI (UC13) -->
+        <div class="tab-pane fade" id="tab-promos">
+            @if (roleId == 1)
+            {
+                <div class="card card-modern p-4 mb-4">
+                    <h6 class="fw-bold text-primary mb-3"><i class="bi bi-ticket-detailed-fill me-1"></i>Phát hành Voucher Khuyến mãi mới</h6>
+                    <form method="post" asp-action="AddPromo" class="row g-2 align-items-end">
+                        <div class="col-md-2"><label class="form-label small">Mã KM</label><input type="text" name="maKM" class="form-control form-control-sm" placeholder="TET2027" required /></div>
+                        <div class="col-md-3"><label class="form-label small">Tên chương trình</label><input type="text" name="tenKM" class="form-control form-control-sm" placeholder="Ưu đãi Tết 2027" required /></div>
+                        <div class="col-md-1"><label class="form-label small">% Giảm</label><input type="number" name="phanTramGiam" class="form-control form-control-sm" value="15" required /></div>
+                        <div class="col-md-2"><label class="form-label small">Giảm tối đa</label><input type="number" name="giamToiDa" class="form-control form-control-sm" value="300000" required /></div>
+                        <div class="col-md-2"><label class="form-label small">Đơn tối thiểu</label><input type="number" name="donHangToiThieu" class="form-control form-control-sm" value="1000000" required /></div>
+                        <div class="col-md-1"><label class="form-label small">SL</label><input type="number" name="soLuong" class="form-control form-control-sm" value="50" required /></div>
+                        <div class="col-md-1"><input type="hidden" name="ngayKetThuc" value="2027-06-01" /><button type="submit" class="btn btn-primary btn-sm w-100">Tạo</button></div>
+                    </form>
+                </div>
+            }
+
+            <div class="card card-modern p-4">
+                <h5 class="fw-bold mb-3">Danh sách Mã Khuyến mãi</h5>
+                <table class="table table-hover align-middle small">
+                    <thead class="table-light">
+                        <tr><th>Mã KM</th><th>Tên chương trình</th><th>Mức giảm</th><th>Tối đa</th><th>SL còn</th><th>Trạng thái</th><th>Thao tác</th></tr>
+                    </thead>
+                    <tbody>
+                        @if (dtKM != null)
+                        {
+                            foreach (DataRow r in dtKM.Rows)
+                            {
+                                bool active = Convert.ToBoolean(r["TrangThai"]);
+                                <tr>
+                                    <td class="fw-bold text-primary">@r["MaKM"]</td>
+                                    <td>@r["TenKM"]</td>
+                                    <td>@r["PhanTramGiam"]%</td>
+                                    <td>@Convert.ToDecimal(r["GiamToiDa"]).ToString("N0")đ</td>
+                                    <td>@r["SoLuong"]</td>
+                                    <td><span class="badge @(active ? "bg-success" : "bg-secondary")">@(active ? "Đang chạy" : "Tạm khóa")</span></td>
+                                    <td>
+                                        <form method="post" asp-action="TogglePromo">
+                                            <input type="hidden" name="maKM" value="@r["MaKM"]" />
+                                            <button type="submit" class="btn btn-sm btn-outline-secondary">Bật / Tắt</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- TAB 6: ĐÁNH GIÁ CHUYẾN BAY (UC08) -->
+        <div class="tab-pane fade" id="tab-reviews">
+            <div class="card card-modern p-4">
+                <h5 class="fw-bold mb-3">Phản hồi & Đánh giá sao từ Hành khách</h5>
+                <table class="table table-hover align-middle small">
+                    <thead class="table-light">
+                        <tr><th>Khách hàng</th><th>Chuyến bay</th><th>Đánh giá</th><th>Nội dung nhận xét</th><th>Ngày gửi</th></tr>
+                    </thead>
+                    <tbody>
+                        @if (dtDG != null)
+                        {
+                            foreach (DataRow r in dtDG.Rows)
+                            {
+                                int stars = Convert.ToInt32(r["SoSao"]);
+                                <tr>
+                                    <td class="fw-bold">@r["TenKH"]</td>
+                                    <td><span class="badge bg-primary">@r["MaChuyenBay"]</span></td>
+                                    <td class="text-warning">@(new string('★', stars))</td>
+                                    <td>@r["BinhLuan"]</td>
+                                    <td>@Convert.ToDateTime(r["NgayDanhGia"]).ToString("dd/MM/yyyy HH:mm")</td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- TAB 7: NHÂN SỰ (CHỈ ADMIN) -->
+        @if (roleId == 1)
+        {
+            <div class="tab-pane fade" id="tab-staff">
+                <div class="card card-modern p-4">
+                    <h5 class="fw-bold mb-3">Danh sách Nhân sự & Phân quyền RBAC</h5>
+                    <table class="table table-hover align-middle small">
+                        <thead class="table-light">
+                            <tr><th>Mã NV</th><th>Họ tên</th><th>Tài khoản</th><th>Chức vụ</th><th>Vai trò</th><th>Trạng thái</th><th>Thao tác</th></tr>
+                        </thead>
+                        <tbody>
+                            @if (dtNV != null)
+                            {
+                                foreach (DataRow r in dtNV.Rows)
+                                {
+                                    bool active = Convert.ToBoolean(r["TrangThai"]);
+                                    <tr>
+                                        <td class="fw-bold">@r["MaNV"]</td>
+                                        <td>@r["TenNV"]</td>
+                                        <td><code>@r["TaiKhoan"]</code></td>
+                                        <td>@r["ChucVu"]</td>
+                                        <td><span class="badge bg-primary">@r["TenRole"]</span></td>
+                                        <td><span class="badge @(active ? "bg-success" : "bg-danger")">@(active ? "Hoạt động" : "Đã khóa")</span></td>
+                                        <td>
+                                            @if (r["MaNV"].ToString() != "NV01")
+                                            {
+                                                <form method="post" asp-action="ToggleStaff">
+                                                    <input type="hidden" name="maNV" value="@r["MaNV"]" />
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger">Khóa / Mở</button>
+                                                </form>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        const hangLabels = @Html.Raw(JsonSerializer.Serialize(hangLabels));
+        const hangRevenues = @Html.Raw(JsonSerializer.Serialize(hangRevenues));
+        const tuyenLabels = @Html.Raw(JsonSerializer.Serialize(tuyenLabels));
+        const tuyenRevenues = @Html.Raw(JsonSerializer.Serialize(tuyenRevenues));
+
+        new Chart(document.getElementById('airlineChart'), {
+            type: 'doughnut',
+            data: {
+                labels: hangLabels,
+                datasets: [{
+                    data: hangRevenues,
+                    backgroundColor: ['#0284c7', '#f59e0b', '#10b981', '#6366f1']
+                }]
+            },
+            options: { plugins: { legend: { position: 'bottom' } } }
+        });
+
+        new Chart(document.getElementById('routeChart'), {
+            type: 'bar',
+            data: {
+                labels: tuyenLabels,
+                datasets: [{
+                    label: 'Doanh thu (VNĐ)',
+                    data: tuyenRevenues,
+                    backgroundColor: '#0284c7',
+                    borderRadius: 6
+                }]
+            },
+            options: {
+                scales: { y: { beginAtZero: true } },
+                plugins: { legend: { display: false } }
+            }
+        });
+    </script>
+}

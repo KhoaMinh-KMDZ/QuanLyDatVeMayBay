@@ -1,0 +1,224 @@
+﻿@using System.Data
+@{
+    ViewData["Title"] = "Tra cứu PNR / Đổi & Hủy vé";
+    var don = ViewBag.DonDatCho as DataRow;
+    var ves = ViewBag.DanhSachVe as DataTable;
+    var refundMap = ViewBag.RefundPreview as Dictionary<string, DataRow>;
+    var cbKhac = ViewBag.ChuyenBayKhac as DataTable;
+}
+
+<div class="container my-5">
+    <div class="row justify-content-center mb-4">
+        <div class="col-md-7">
+            <div class="card card-modern p-4">
+                <h4 class="fw-bold mb-2"><i class="bi bi-ticket-perforated-fill text-primary me-2"></i>Quản lý đặt chỗ (Mã PNR)</h4>
+                <p class="text-muted small mb-3">Tra cứu tình trạng thanh toán, xuất hóa đơn VAT, hủy vé hoàn tiền (Luật 72h) hoặc đổi chuyến bay.</p>
+                <form method="get" asp-action="Lookup" class="d-flex gap-2">
+                    <input type="text" name="maDatCho" class="form-control form-control-lg" placeholder="Nhập mã PNR (VD: PNR00001, PNR00004...)" value="@Context.Request.Query["maDatCho"]" required />
+                    <button type="submit" class="btn btn-sky px-4">Tra cứu</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    @if (TempData["Success"] != null)
+    {
+        <div class="alert alert-success">@TempData["Success"]</div>
+    }
+    @if (TempData["Error"] != null)
+    {
+        <div class="alert alert-danger">@TempData["Error"]</div>
+    }
+    @if (ViewBag.NotFound != null)
+    {
+        <div class="alert alert-warning text-center">@ViewBag.NotFound</div>
+    }
+
+    @if (don != null)
+    {
+        <div class="card card-modern p-4 mb-4">
+            <div class="d-flex flex-wrap justify-content-between align-items-center border-bottom pb-3 mb-3 gap-2">
+                <div>
+                    <h5 class="fw-bold mb-1">Hồ sơ đặt chỗ: <span class="text-primary">@don["MaDatCho"]</span></h5>
+                    <div class="small text-muted">Khách hàng: <strong>@don["TenKH"]</strong> • SĐT: @don["SDT"] • Ngày đặt: @Convert.ToDateTime(don["NgayDat"]).ToString("dd/MM/yyyy HH:mm")</div>
+                </div>
+                <div class="text-end d-flex flex-column align-items-md-end gap-1">
+                    <span class="badge bg-info text-dark fs-6">@don["TrangThaiDonHang"]</span>
+                    @if (don["TrangThaiDonHang"].ToString() == "Chờ thanh toán")
+                    {
+                        <a asp-action="Payment" asp-route-maDatCho="@don["MaDatCho"]" class="btn btn-warning btn-sm fw-bold">Thanh toán ngay</a>
+                    }
+                    else if (don["MaHD"] != DBNull.Value)
+                    {
+                        <div class="d-flex align-items-center gap-2 mt-1">
+                            <span class="small text-success">HĐ: <strong>@don["MaHD"]</strong> (@don["PhuongThucThanhToan"])</span>
+                            <a asp-action="Invoice" asp-route-maDatCho="@don["MaDatCho"]" class="btn btn-outline-dark btn-sm py-0 px-2">
+                                <i class="bi bi-printer me-1"></i>In Hóa Đơn VAT
+                            </a>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            @if (ves != null)
+            {
+                foreach (DataRow v in ves.Rows)
+                {
+                    string maVe = v["MaVe"].ToString()!;
+                    string safeId = maVe.Replace("-", "_");
+                    string trangThaiVe = v["TrangThaiVe"].ToString()!;
+                    DataRow? refInfo = (refundMap != null && refundMap.ContainsKey(maVe)) ? refundMap[maVe] : null;
+
+                    <div class="border rounded-3 p-3 mb-3 bg-light">
+                        <div class="row align-items-center g-3">
+                            <div class="col-md-5">
+                                <span class="badge bg-dark me-1">@maVe</span>
+                                <span class="badge @(trangThaiVe == "Đã hủy" ? "bg-danger" : "bg-primary")">@trangThaiVe</span>
+                                <h6 class="fw-bold mt-2 mb-1">@v["TenHanhKhach"] (@v["LoaiHanhKhach"])</h6>
+                                <div class="small text-muted">
+                                    Chuyến: <strong>@v["MaChuyenBay"]</strong> (@v["ThanhPhoDi"] → @v["ThanhPhoDen"]) • Ghế: <strong>@v["SoGhe"]</strong> (@v["TenHangGhe"])
+                                </div>
+                                <div class="small text-muted">Giờ bay: @Convert.ToDateTime(v["NgayGioBay"]).ToString("HH:mm dd/MM/yyyy") • Giá vé: <strong>@Convert.ToDecimal(v["GiaVe"]).ToString("N0")đ</strong></div>
+                            </div>
+
+                            <div class="col-md-7 text-md-end">
+                                @if (trangThaiVe == "Đã xuất vé" || trangThaiVe == "Đã đặt chỗ")
+                                {
+                                    @if (refInfo != null)
+                                    {
+                                        <div class="small text-muted mb-2">
+                                            Thẩm định Luật 72h: Còn <strong>@refInfo["GioConLai"] giờ</strong> trước bay $\rightarrow$ Mức hoàn: <strong class="text-success">@refInfo["PhanTramHoan"]%</strong> (Hoàn <strong>@Convert.ToDecimal(refInfo["SoTienHoan"]).ToString("N0")đ</strong>)
+                                        </div>
+                                    }
+
+                                    <div class="d-inline-flex flex-wrap gap-2">
+                                        <a asp-controller="CheckIn" asp-action="Index" asp-route-maDatCho="@don["MaDatCho"]" asp-route-tenHanhKhach="@v["TenHanhKhach"]" class="btn btn-sm btn-outline-success">
+                                            <i class="bi bi-qr-code me-1"></i>Check-in
+                                        </a>
+                                        <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#change_@safeId" onclick="loadSeatsForFlight('flightSelect_@safeId', 'seatSelect_@safeId', 'hangInput_@safeId')">
+                                            <i class="bi bi-arrow-left-right me-1"></i>Đổi chuyến
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="collapse" data-bs-target="#cancel_@safeId">
+                                            <i class="bi bi-x-circle me-1"></i>Hủy vé
+                                        </button>
+                                    </div>
+
+                                    <!-- Form Hủy vé -->
+                                    <div class="collapse mt-3 text-start" id="cancel_@safeId">
+                                        <form method="post" asp-action="CancelTicket" class="card card-body border-danger">
+                                            <input type="hidden" name="maDatCho" value="@don["MaDatCho"]" />
+                                            <input type="hidden" name="maVe" value="@maVe" />
+                                            <label class="form-label small fw-bold text-danger">Xác nhận hủy vé @maVe (Tự động giải phóng ghế trống)</label>
+                                            <div class="input-group input-group-sm">
+                                                <input type="text" name="lyDo" class="form-control" placeholder="Nhập lý do hủy vé..." required />
+                                                <button type="submit" class="btn btn-danger">Xác nhận Hủy & Hoàn tiền</button>
+                                            </div>
+                                        </form>
+                                    </div>
+
+                                    <!-- Form Đổi chuyến bay (Tự động tải ghế trống qua AJAX) -->
+                                    <div class="collapse mt-3 text-start" id="change_@safeId">
+                                        <form method="post" asp-action="RescheduleTicket" class="card card-body border-primary">
+                                            <input type="hidden" name="maDatCho" value="@don["MaDatCho"]" />
+                                            <input type="hidden" name="maVeCu" value="@maVe" />
+                                            <input type="hidden" name="maHangGheMoi" id="hangInput_@safeId" value="ECO" />
+                                            <div class="small fw-bold text-primary mb-2">Đổi sang chuyến bay mới (Phí đổi cố định 150.000đ + Chênh lệch giá)</div>
+                                            <div class="row g-2">
+                                                <div class="col-md-5">
+                                                    <select name="maChuyenBayMoi" id="flightSelect_@safeId" class="form-select form-select-sm" onchange="loadSeatsForFlight('flightSelect_@safeId', 'seatSelect_@safeId', 'hangInput_@safeId')" required>
+                                                        @if (cbKhac != null)
+                                                        {
+                                                            foreach (DataRow c in cbKhac.Rows)
+                                                            {
+                                                                <option value="@c["MaChuyenBay"]">@c["MaChuyenBay"] (@c["MaTuyenBay"]) - @Convert.ToDateTime(c["NgayGioBay"]).ToString("dd/MM HH:mm")</option>
+                                                            }
+                                                        }
+                                                    </select>
+                                                </div>
+                                                <div class="col-md-5">
+                                                    <select name="maGheMoi" id="seatSelect_@safeId" class="form-select form-select-sm" onchange="syncHangGhe(this, 'hangInput_@safeId')" required>
+                                                        <option value="">-- Đang tải ghế trống... --</option>
+                                                    </select>
+                                                </div>
+                                                <div class="col-md-2">
+                                                    <button type="submit" class="btn btn-primary btn-sm w-100">Đổi vé</button>
+                                                </div>
+                                            </div>
+                                        </form>
+                                    </div>
+                                }
+                                else if (trangThaiVe == "Đã Check-in")
+                                {
+                                    <div class="d-inline-flex flex-wrap gap-2">
+                                        <a asp-controller="CheckIn" asp-action="Index" asp-route-maDatCho="@don["MaDatCho"]" asp-route-tenHanhKhach="@v["TenHanhKhach"]" class="btn btn-sm btn-success">
+                                            <i class="bi bi-upc-scan me-1"></i>Xem Boarding Pass
+                                        </a>
+                                        <button type="button" class="btn btn-sm btn-outline-warning text-dark" data-bs-toggle="collapse" data-bs-target="#review_@safeId">
+                                            <i class="bi bi-star-fill text-warning me-1"></i>Đánh giá chuyến bay
+                                        </button>
+                                    </div>
+
+                                    <!-- Form Đánh giá chuyến bay (UC08) -->
+                                    <div class="collapse mt-3 text-start" id="review_@safeId">
+                                        <form method="post" asp-action="SubmitReview" class="card card-body border-warning">
+                                            <input type="hidden" name="maDatCho" value="@don["MaDatCho"]" />
+                                            <input type="hidden" name="maChuyenBay" value="@v["MaChuyenBay"]" />
+                                            <div class="row g-2 align-items-center">
+                                                <div class="col-md-3">
+                                                    <select name="soSao" class="form-select form-select-sm">
+                                                        <option value="5">⭐⭐⭐⭐⭐ (5 sao)</option>
+                                                        <option value="4">⭐⭐⭐⭐ (4 sao)</option>
+                                                        <option value="3">⭐⭐⭐ (3 sao)</option>
+                                                        <option value="2">⭐⭐ (2 sao)</option>
+                                                        <option value="1">⭐ (1 sao)</option>
+                                                    </select>
+                                                </div>
+                                                <div class="col-md-7">
+                                                    <input type="text" name="binhLuan" class="form-control form-control-sm" placeholder="Chia sẻ trải nghiệm dịch vụ chuyến bay @v["MaChuyenBay"]..." required />
+                                                </div>
+                                                <div class="col-md-2">
+                                                    <button type="submit" class="btn btn-warning btn-sm w-100 fw-semibold">Gửi</button>
+                                                </div>
+                                            </div>
+                                        </form>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    }
+</div>
+
+@section Scripts {
+    <script>
+        async function loadSeatsForFlight(flightSelectId, seatSelectId, hangInputId) {
+            const maCB = document.getElementById(flightSelectId).value;
+            const seatSelect = document.getElementById(seatSelectId);
+            seatSelect.innerHTML = '<option value="">Đang tải ghế trống...</option>';
+
+            const res = await fetch(`/Booking/GetAvailableSeats?maChuyenBay=${encodeURIComponent(maCB)}`);
+            const seats = await res.json();
+
+            if (seats.length === 0) {
+                seatSelect.innerHTML = '<option value="">Hết ghế trống</option>';
+                return;
+            }
+
+            seatSelect.innerHTML = seats.map(s =>
+                `<option value="${s.maGhe}" data-hang="${s.maHangGhe}">Ghế ${s.soGhe} - ${s.tenHangGhe} (${s.giaThucTe.toLocaleString('vi-VN')}đ)</option>`
+            ).join('');
+
+            syncHangGhe(seatSelect, hangInputId);
+        }
+
+        function syncHangGhe(selectEl, hangInputId) {
+            const selectedOption = selectEl.options[selectEl.selectedIndex];
+            if (selectedOption && selectedOption.dataset.hang) {
+                document.getElementById(hangInputId).value = selectedOption.dataset.hang;
+            }
+        }
+    </script>
+}

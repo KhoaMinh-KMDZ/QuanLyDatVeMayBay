@@ -1,0 +1,82 @@
+﻿@{
+    ViewData["Title"] = "Đăng ký tài khoản hành khách";
+}
+
+<div class="container my-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-7">
+            <div class="card card-modern p-4 p-md-5">
+                <h4 class="fw-bold mb-1">Đăng ký thành viên SkyVN Airlines</h4>
+                <p class="text-muted small mb-4">Hỗ trợ công dân Việt Nam (CCCD) và du khách quốc tế (Hộ chiếu)</p>
+
+                @if (ViewBag.Error != null)
+                {
+                    <div class="alert alert-danger small">@ViewBag.Error</div>
+                }
+
+                <form method="post" asp-action="Register">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Họ và tên *</label>
+                            <input type="text" name="tenKH" class="form-control" required />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small fw-semibold">Giới tính *</label>
+                            <select name="gioiTinh" class="form-select">
+                                <option value="Nam">Nam</option>
+                                <option value="Nữ">Nữ</option>
+                                <option value="Khác">Khác</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small fw-semibold">Ngày sinh *</label>
+                            <input type="date" name="ngaySinh" class="form-control" value="2004-01-01" required />
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Số điện thoại *</label>
+                            <input type="text" name="sdt" class="form-control" required />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-semibold">Email *</label>
+                            <input type="email" name="email" class="form-control" required />
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Đối tượng khách *</label>
+                            <select name="loaiKhachHang" class="form-select">
+                                <option value="Việt Nam">Việt Nam</option>
+                                <option value="Nước ngoài">Nước ngoài</option>
+                                <option value="Doanh nghiệp">Doanh nghiệp</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Số CCCD (VN)</label>
+                            <input type="text" name="cccd" class="form-control" placeholder="12 số CCCD" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Số Hộ chiếu (Quốc tế)</label>
+                            <input type="text" name="hoChieu" class="form-control" placeholder="Passport No." />
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label small fw-semibold">Quốc tịch</label>
+                            <input type="text" name="quocTich" class="form-control" value="Việt Nam" />
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label small fw-semibold">Địa chỉ liên hệ</label>
+                            <input type="text" name="diaChi" class="form-control" />
+                        </div>
+
+                        <div class="col-12">
+                            <label class="form-label small fw-semibold">Mật khẩu *</label>
+                            <input type="password" name="matKhau" class="form-control" required />
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-sky w-100 py-2 rounded-pill mt-4">Hoàn tất đăng ký</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
