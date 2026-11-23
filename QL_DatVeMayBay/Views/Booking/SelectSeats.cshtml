@@ -1,150 +1,114 @@
-﻿@using System.Data
-@{
-    ViewData["Title"] = "Chọn ghế ngồi & Thông tin hành khách";
-    var cb = ViewBag.ChuyenBay as DataRow;
-    var dtGhe = ViewBag.DanhSachGhe as DataTable;
-    var kms = ViewBag.KhuyenMais as DataTable;
-    string defaultName = Context.Session.GetString("UserType") == "KH" ? (Context.Session.GetString("UserName") ?? "") : "";
-    string defaultCCCD = Context.Session.GetString("UserType") == "KH" ? (Context.Session.GetString("UserCCCD") ?? "") : "";
+﻿@{
+    ViewData["Title"] = "Chọn Ghế & Dịch Vụ Bổ Sung";
+    var chuyenDi = ViewBag.ChuyenDi as Dictionary<string, object>;
+    var gheDi = ViewBag.GheChuyenDi as List<Dictionary<string, object>> ?? new();
+    var chuyenVe = ViewBag.ChuyenVe as Dictionary<string, object>;
+    var gheVe = ViewBag.GheChuyenVe as List<Dictionary<string, object>>;
+    var dichVus = ViewBag.DichVuBoSung as List<Dictionary<string, object>> ?? new();
+    int soHK = ViewBag.SoHanhKhach ?? 1;
 }
 
-<div class="container my-5">
+<div class="container py-4">
     @if (TempData["Error"] != null)
     {
-        <div class="alert alert-danger">@TempData["Error"]</div>
+        <div class="alert alert-danger fw-bold">@TempData["Error"]</div>
     }
+    <div id="realtimeAlert" class="alert alert-info d-none fw-semibold"></div>
 
-    <!-- Thanh tóm tắt chuyến bay -->
-    <div class="card card-modern p-4 mb-4 bg-dark text-white">
-        <div class="row align-items-center">
-            <div class="col-md-8">
-                <span class="badge bg-warning text-dark me-2">@cb!["MaChuyenBay"]</span>
-                <span class="fw-bold fs-5">@cb["ThanhPhoDi"] (@cb["MaSanBayDi"]) <i class="bi bi-arrow-right mx-2 text-info"></i> @cb["ThanhPhoDen"] (@cb["MaSanBayDen"])</span>
-                <div class="small text-light opacity-75 mt-1">
-                    Hãng: <strong>@cb["TenHangHangKhong"]</strong> • Tàu bay: <strong>@cb["TenMayBay"]</strong> • Khởi hành: <strong>@Convert.ToDateTime(cb["NgayGioBay"]).ToString("HH:mm dd/MM/yyyy")</strong>
-                </div>
-            </div>
-            <div class="col-md-4 text-md-end mt-3 mt-md-0">
-                <div class="small opacity-75">Giá cơ bản (Phổ thông)</div>
-                <div class="fs-4 fw-bold text-warning">@Convert.ToDecimal(cb["GiaVeCoBan"]).ToString("N0") VNĐ</div>
-            </div>
-        </div>
-    </div>
-
-    <form method="post" asp-action="CreateBooking" id="bookingForm">
-        <input type="hidden" name="maChuyenBay" value="@cb["MaChuyenBay"]" />
+    <form method="post" asp-action="HoldSeatsAndProceed">
+        <input type="hidden" name="maChuyenBayDi" value="@chuyenDi!["MaChuyenBay"]" />
+        @if (chuyenVe != null)
+        {
+            <input type="hidden" name="maChuyenBayVe" value="@chuyenVe["MaChuyenBay"]" />
+        }
 
         <div class="row g-4">
-            <!-- CỘT TRÁI: SƠ ĐỒ KHOANG GHẾ MÁY BAY -->
-            <div class="col-lg-5">
-                <div class="card card-modern p-4">
-                    <h5 class="fw-bold mb-3"><i class="bi bi-grid-3x3-gap-fill text-primary me-2"></i>Sơ đồ khoang ghế (@cb["MaMayBay"])</h5>
-
-                    <!-- Chú thích màu -->
-                    <div class="d-flex flex-wrap gap-3 small mb-4 pb-3 border-bottom">
-                        <span><span class="badge bg-warning text-dark">&nbsp;&nbsp;</span> Thương gia (x2.0)</span>
-                        <span><span class="badge bg-outline-primary border border-primary text-primary">&nbsp;&nbsp;</span> Phổ thông (x1.0)</span>
-                        <span><span class="badge bg-success">&nbsp;&nbsp;</span> Đang chọn</span>
-                        <span><span class="badge bg-secondary">&nbsp;&nbsp;</span> Đã đặt</span>
+            <!-- SƠ ĐỒ GHẾ LƯỢT ĐI -->
+            <div class="@(chuyenVe != null ? "col-md-6" : "col-md-7")">
+                <div class="card shadow-sm rounded-4 p-4">
+                    <h5 class="fw-bold text-danger">1. Chọn @soHK ghế Lượt đi: @chuyenDi["MaChuyenBay"] (@chuyenDi["MaSanBayDi"] → @chuyenDi["MaSanBayDen"])</h5>
+                    <p class="small text-muted">Cập nhật đa luồng thời gian thực: Ghế màu xám là đã có người giữ/đặt.</p>
+                    <div class="row g-2 mt-2" id="seatGrid_@chuyenDi["MaChuyenBay"]">
+                        @foreach (var g in gheDi)
+                        {
+                            bool daDat = Convert.ToInt32(g["DaBiDat"]) == 1;
+                            <div class="col-3">
+                                <input type="checkbox" class="btn-check seat-chk-di" name="gheDiIds" id="seat_@g["MaGhe"]" value="@g["MaGhe"]" @(daDat ? "disabled" : "") onchange="limitCheck('.seat-chk-di', @soHK)">
+                                <label class="btn @(g["MaHangGhe"].ToString() == "BUS" ? "btn-outline-warning" : "btn-outline-secondary") w-100 fw-bold" for="seat_@g["MaGhe"]">
+                                    @g["SoGhe"] <small class="d-block">@g["MaHangGhe"]</small>
+                                </label>
+                            </div>
+                        }
                     </div>
+                </div>
+            </div>
 
-                    <!-- Mũi máy bay -->
-                    <div class="text-center mb-3">
-                        <div class="mx-auto bg-light border rounded-top-pill py-2 fw-semibold text-muted small" style="width: 220px;">
-                            <i class="bi bi-chevron-up d-block"></i>KHOANG LÁI (MŨI TÀU BAY)
-                        </div>
-                    </div>
-
-                    <!-- Lưới ghế ngồi -->
-                    <div class="mx-auto" style="max-width: 290px;">
-                        <div class="row g-2 text-center">
-                            @if (dtGhe != null)
+            <!-- SƠ ĐỒ GHẾ LƯỢT VỀ (NẾU ĐẶT KHỨ HỒI) -->
+            @if (chuyenVe != null && gheVe != null)
+            {
+                <div class="col-md-6">
+                    <div class="card shadow-sm rounded-4 p-4">
+                        <h5 class="fw-bold text-primary">2. Chọn @soHK ghế Lượt về: @chuyenVe["MaChuyenBay"] (@chuyenVe["MaSanBayDi"] → @chuyenVe["MaSanBayDen"])</h5>
+                        <p class="small text-muted">Chọn đồng thời ghế cho chuyến về.</p>
+                        <div class="row g-2 mt-2" id="seatGrid_@chuyenVe["MaChuyenBay"]">
+                            @foreach (var g in gheVe)
                             {
-                                foreach (DataRow g in dtGhe.Rows)
-                                {
-                                    int maGhe = Convert.ToInt32(g["MaGhe"]);
-                                    string soGhe = g["SoGhe"].ToString()!;
-                                    string hang = g["MaHangGhe"].ToString()!;
-                                    string tinhTrang = g["TinhTrang"].ToString()!;
-                                    decimal giaThucTe = Convert.ToDecimal(g["GiaThucTe"]);
-
-                                    bool isBooked = tinhTrang != "Trống";
-                                    string btnClass = isBooked
-                                    ? "btn-secondary disabled opacity-50"
-                                    : (hang == "BUS" ? "btn-outline-warning text-dark fw-bold" : "btn-outline-primary fw-semibold");
-
-                                    <div class="col-3">
-                                        <button type="button"
-                                                class="btn @btnClass w-100 py-2 seat-btn"
-                                                data-maghe="@maGhe"
-                                                data-soghe="@soGhe"
-                                                data-hang="@hang"
-                                                data-gia="@giaThucTe"
-                                                @(isBooked ? "disabled" : "")>
-                                            @soGhe
-                                        </button>
-                                    </div>
-                                }
+                                bool daDat = Convert.ToInt32(g["DaBiDat"]) == 1;
+                                <div class="col-3">
+                                    <input type="checkbox" class="btn-check seat-chk-ve" name="gheVeIds" id="seat_@g["MaGhe"]" value="@g["MaGhe"]" @(daDat ? "disabled" : "") onchange="limitCheck('.seat-chk-ve', @soHK)">
+                                    <label class="btn @(g["MaHangGhe"].ToString() == "BUS" ? "btn-outline-warning" : "btn-outline-secondary") w-100 fw-bold" for="seat_@g["MaGhe"]">
+                                        @g["SoGhe"] <small class="d-block">@g["MaHangGhe"]</small>
+                                    </label>
+                                </div>
                             }
                         </div>
                     </div>
                 </div>
-            </div>
+            }
 
-            <!-- CỘT PHẢI: THÔNG TIN HÀNH KHÁCH & DỊCH VỤ PHỤ TRỢ -->
-            <div class="col-lg-7">
-                <div class="card card-modern p-4">
-                    <h5 class="fw-bold mb-3"><i class="bi bi-people-fill text-primary me-2"></i>Hồ sơ hành khách & Dịch vụ đi kèm</h5>
-
-                    <div id="passengerContainer">
-                        <div class="alert alert-info small mb-0" id="emptySeatAlert">
-                            <i class="bi bi-hand-index-thumb me-1"></i>Hãy nhấp chọn vị trí ghế trống trên sơ đồ bên trái để nhập thông tin hành khách.
+            <!-- THÔNG TIN HÀNH KHÁCH + MUA THÊM DỊCH VỤ -->
+            <div class="col-12">
+                <div class="card shadow-sm rounded-4 p-4">
+                    <h5 class="fw-bold mb-3">Thông tin hành khách &amp; Dịch vụ bổ sung (Hành lý / Suất ăn / Chọn ghế)</h5>
+                    @for (int i = 0; i < soHK; i++)
+                    {
+                        <div class="row g-3 mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label small fw-bold">Họ tên hành khách @(i + 1) *</label>
+                                <input type="text" name="tenHanhKhachs" class="form-control" required placeholder="VD: PHAM MINH HUNG" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small fw-bold">Số CCCD / Hộ chiếu *</label>
+                                <input type="text" name="cccdHanhKhachs" class="form-control" required placeholder="VD: 079206001234" />
+                            </div>
                         </div>
+                    }
+
+                    <h6 class="fw-bold text-primary mt-3">Mua thêm dịch vụ đi kèm (Có thể mua thêm sau khi đặt vé):</h6>
+                    <div class="row g-2 mb-3">
+                        @foreach (var dv in dichVus)
+                        {
+                            <div class="col-md-4">
+                                <div class="form-check border rounded-3 p-3">
+                                    <input class="form-check-input" type="checkbox" name="selectedServiceIds" value="@dv["MaDV"]" id="dv_@dv["MaDV"]">
+                                    <label class="form-check-label w-100" for="dv_@dv["MaDV"]">
+                                        <strong>@dv["TenDV"]</strong>
+                                        <span class="badge bg-info text-dark float-end">+@Convert.ToDecimal(dv["DonGia"]).ToString("N0")đ</span>
+                                        <small class="d-block text-muted">@dv["LoaiDV"]</small>
+                                    </label>
+                                </div>
+                            </div>
+                        }
                     </div>
 
-                    <hr class="my-4" />
-
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <label class="form-label fw-semibold small">Dịch vụ phụ trợ (UC17)</label>
-                            <select name="dichVuPhuTro" class="form-select">
-                                <option value="">Không chọn dịch vụ thêm</option>
-                                <option value="Hành lý ký gửi 20kg">Hành lý ký gửi 20kg</option>
-                                <option value="Hành lý 30kg + Suất ăn nóng">Hành lý 30kg + Suất ăn nóng</option>
-                                <option value="Bảo hiểm trễ chuyến + Hành lý">Bảo hiểm trễ chuyến + Hành lý</option>
-                            </select>
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold">Mã khuyến mãi (VD: HE2026, VIPBAY)</label>
+                            <input type="text" name="maKM" class="form-control" placeholder="Nhập mã giảm giá..." />
                         </div>
-
-                        <div class="col-md-6">
-                            <label class="form-label fw-semibold small">Mã Voucher khuyến mãi (UC20)</label>
-                            <select name="maKM" class="form-select">
-                                <option value="">-- Không áp dụng mã giảm giá --</option>
-                                @if (kms != null)
-                                {
-                                    foreach (DataRow km in kms.Rows)
-                                    {
-                                        <option value="@km["MaKM"]">
-                                            @km["MaKM"] - Giảm @km["PhanTramGiam"]% (Tối đa @Convert.ToDecimal(km["GiamToiDa"]).ToString("N0")đ)
-                                        </option>
-                                    }
-                                }
-                            </select>
+                        <div class="col-md-8 text-end">
+                            <button type="submit" class="btn btn-danger btn-lg fw-bold px-5">Giữ ghế 15 phút &amp; Thanh toán Online →</button>
                         </div>
-
-                        <div class="col-12">
-                            <label class="form-label fw-semibold small">Ghi chú đơn đặt chỗ</label>
-                            <input type="text" name="ghiChuThem" class="form-control" placeholder="Yêu cầu hỗ trợ đặc biệt (nếu có)..." />
-                        </div>
-                    </div>
-
-                    <div class="d-flex justify-content-between align-items-center bg-light p-3 rounded-3 mt-4">
-                        <div>
-                            <div class="small text-muted">Tạm tính tổng giá vé (<span id="seatCount">0</span> ghế)</div>
-                            <div class="fs-4 fw-bold text-danger" id="totalPrice">0 VNĐ</div>
-                        </div>
-                        <button type="submit" class="btn btn-sky btn-lg px-4 rounded-pill">
-                            Khóa ghế & Nhận mã PNR <i class="bi bi-lock-fill ms-1"></i>
-                        </button>
                     </div>
                 </div>
             </div>
@@ -152,79 +116,40 @@
     </form>
 </div>
 
-@section Scripts {
-    <script>
-        const selectedSeats = new Map();
-        const defaultName = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(defaultName));
-        const defaultCCCD = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(defaultCCCD));
-
-        document.querySelectorAll('.seat-btn').forEach(btn => {
-            btn.addEventListener('click', function () {
-                const maGhe = this.dataset.maghe;
-                const soGhe = this.dataset.soghe;
-                const hang = this.dataset.hang;
-                const gia = parseFloat(this.dataset.gia);
-
-                if (selectedSeats.has(maGhe)) {
-                    selectedSeats.delete(maGhe);
-                    this.classList.remove('btn-success', 'text-white');
-                    this.classList.add(hang === 'BUS' ? 'btn-outline-warning' : 'btn-outline-primary');
-                    if (hang === 'BUS') this.classList.add('text-dark');
-                } else {
-                    selectedSeats.set(maGhe, { maGhe, soGhe, hang, gia });
-                    this.classList.remove('btn-outline-warning', 'btn-outline-primary', 'text-dark');
-                    this.classList.add('btn-success', 'text-white');
-                }
-                renderPassengers();
-            });
-        });
-
-        function renderPassengers() {
-            const container = document.getElementById('passengerContainer');
-            let total = 0;
-            let idx = 0;
-
-            if (selectedSeats.size === 0) {
-                container.innerHTML = `<div class="alert alert-info small mb-0"><i class="bi bi-hand-index-thumb me-1"></i>Hãy nhấp chọn vị trí ghế trống trên sơ đồ bên trái để nhập thông tin hành khách.</div>`;
-                document.getElementById('seatCount').innerText = '0';
-                document.getElementById('totalPrice').innerText = '0 VNĐ';
-                return;
-            }
-
-            let html = '';
-            selectedSeats.forEach((seat) => {
-                total += seat.gia;
-                const prefillName = idx === 0 ? defaultName : '';
-                const prefillCCCD = idx === 0 ? defaultCCCD : '';
-                html += `
-                    <div class="border rounded-3 p-3 mb-3 bg-white">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <span class="badge bg-success">Ghế ${seat.soGhe} (${seat.hang})</span>
-                            <span class="fw-bold text-primary">${seat.gia.toLocaleString('vi-VN')} VNĐ</span>
-                        </div>
-                        <input type="hidden" name="selectedMaGhe" value="${seat.maGhe}" />
-                        <div class="row g-2">
-                            <div class="col-md-5">
-                                <input type="text" name="tenHanhKhach" class="form-control form-control-sm" placeholder="Họ tên hành khách *" value="${prefillName}" required />
-                            </div>
-                            <div class="col-md-4">
-                                <input type="text" name="cccdHanhKhach" class="form-control form-control-sm" placeholder="CCCD / Hộ chiếu *" value="${prefillCCCD}" required />
-                            </div>
-                            <div class="col-md-3">
-                                <select name="loaiHanhKhach" class="form-select form-select-sm">
-                                    <option value="Người lớn">Người lớn</option>
-                                    <option value="Trẻ em">Trẻ em</option>
-                                    <option value="Em bé">Em bé</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>`;
-                idx++;
-            });
-
-            container.innerHTML = html;
-            document.getElementById('seatCount').innerText = selectedSeats.size;
-            document.getElementById('totalPrice').innerText = total.toLocaleString('vi-VN') + ' VNĐ';
+<script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.0/signalr.min.js"></script>
+<script>
+    function limitCheck(selector, max) {
+        const checked = document.querySelectorAll(selector + ':checked');
+        if (checked.length > max) {
+            checked[0].checked = false;
         }
-    </script>
-}
+    }
+
+    // Kết nối SignalR đồng bộ sơ đồ ghế giữa các trình duyệt (Chrome, Edge...) theo thời gian thực
+    const connection = new signalR.HubConnectionBuilder().withUrl("/seatHub").build();
+
+    connection.on("SeatStatusChanged", function (data) {
+        data.seatIds.forEach(id => {
+            const chk = document.getElementById("seat_" + id);
+            if (chk) {
+                if (data.isOccupied) {
+                    chk.checked = false;
+                    chk.disabled = true;
+                } else {
+                    chk.disabled = false;
+                }
+            }
+        });
+        const alertBox = document.getElementById("realtimeAlert");
+        alertBox.textContent = data.message || "Sơ đồ ghế vừa được cập nhật theo thời gian thực từ giao dịch khác!";
+        alertBox.classList.remove("d-none");
+    });
+
+    connection.start().then(() => {
+        connection.invoke("JoinFlightRoom", "@chuyenDi["MaChuyenBay"]");
+        @if (chuyenVe != null)
+        {
+                <text>connection.invoke("JoinFlightRoom", "@chuyenVe["MaChuyenBay"]");</text>
+        }
+    });
+</script>

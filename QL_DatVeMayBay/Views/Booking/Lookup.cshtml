@@ -12,7 +12,7 @@
         <div class="col-md-7">
             <div class="card card-modern p-4">
                 <h4 class="fw-bold mb-2"><i class="bi bi-ticket-perforated-fill text-primary me-2"></i>Quản lý đặt chỗ (Mã PNR)</h4>
-                <p class="text-muted small mb-3">Tra cứu tình trạng thanh toán, xuất hóa đơn VAT, hủy vé hoàn tiền (Luật 72h) hoặc đổi chuyến bay.</p>
+                <p class="text-muted small mb-3">Tra cứu tình trạng thanh toán, xuất hóa đơn VAT (trong 72h), mua thêm dịch vụ, hủy vé hoàn tiền hoặc đổi chuyến bay.</p>
                 <form method="get" asp-action="Lookup" class="d-flex gap-2">
                     <input type="text" name="maDatCho" class="form-control form-control-lg" placeholder="Nhập mã PNR (VD: PNR00001, PNR00004...)" value="@Context.Request.Query["maDatCho"]" required />
                     <button type="submit" class="btn btn-sky px-4">Tra cứu</button>
@@ -23,11 +23,11 @@
 
     @if (TempData["Success"] != null)
     {
-        <div class="alert alert-success">@TempData["Success"]</div>
+        <div class="alert alert-success fw-semibold">@TempData["Success"]</div>
     }
     @if (TempData["Error"] != null)
     {
-        <div class="alert alert-danger">@TempData["Error"]</div>
+        <div class="alert alert-danger fw-semibold">@TempData["Error"]</div>
     }
     @if (ViewBag.NotFound != null)
     {
@@ -42,6 +42,7 @@
                     <h5 class="fw-bold mb-1">Hồ sơ đặt chỗ: <span class="text-primary">@don["MaDatCho"]</span></h5>
                     <div class="small text-muted">Khách hàng: <strong>@don["TenKH"]</strong> • SĐT: @don["SDT"] • Ngày đặt: @Convert.ToDateTime(don["NgayDat"]).ToString("dd/MM/yyyy HH:mm")</div>
                 </div>
+
                 <div class="text-end d-flex flex-column align-items-md-end gap-1">
                     <span class="badge bg-info text-dark fs-6">@don["TrangThaiDonHang"]</span>
                     @if (don["TrangThaiDonHang"].ToString() == "Chờ thanh toán")
@@ -50,11 +51,28 @@
                     }
                     else if (don["MaHD"] != DBNull.Value)
                     {
-                        <div class="d-flex align-items-center gap-2 mt-1">
+                        bool duocXuatHD = Convert.ToInt32(don["DuocXuatHoaDon72h"]) == 1;
+                        <div class="d-flex flex-wrap align-items-center gap-2 mt-1">
                             <span class="small text-success">HĐ: <strong>@don["MaHD"]</strong> (@don["PhuongThucThanhToan"])</span>
-                            <a asp-action="Invoice" asp-route-maDatCho="@don["MaDatCho"]" class="btn btn-outline-dark btn-sm py-0 px-2">
-                                <i class="bi bi-printer me-1"></i>In Hóa Đơn VAT
-                            </a>
+
+                            <!-- Nút mua thêm dịch vụ (Hành lý, Suất ăn, Chọn ghế) thanh toán chuyển khoản -->
+                            <button type="button" class="btn btn-outline-primary btn-sm py-0 px-2 fw-semibold" data-bs-toggle="modal" data-bs-target="#lookupAddonModal">
+                                + Mua thêm dịch vụ (CK)
+                            </button>
+
+                            <!-- Chỉ xuất hóa đơn trong vòng 72 tiếng sau khi mua vé -->
+                            @if (duocXuatHD)
+                            {
+                                <a asp-action="Invoice" asp-route-maDatCho="@don["MaDatCho"]" class="btn btn-outline-dark btn-sm py-0 px-2">
+                                    <i class="bi bi-printer me-1"></i>In Hóa Đơn VAT (72h)
+                                </a>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn btn-secondary btn-sm py-0 px-2" disabled title="Đã quá 72 giờ kể từ lúc thanh toán vé">
+                                    Quá hạn 72h xuất HĐ
+                                </button>
+                            }
                         </div>
                     }
                 </div>
@@ -87,7 +105,7 @@
                                     @if (refInfo != null)
                                     {
                                         <div class="small text-muted mb-2">
-                                            Thẩm định Luật 72h: Còn <strong>@refInfo["GioConLai"] giờ</strong> trước bay $\rightarrow$ Mức hoàn: <strong class="text-success">@refInfo["PhanTramHoan"]%</strong> (Hoàn <strong>@Convert.ToDecimal(refInfo["SoTienHoan"]).ToString("N0")đ</strong>)
+                                            Thẩm định Luật 72h: Còn <strong>@refInfo["GioConLai"] giờ</strong> trước bay → Mức hoàn: <strong class="text-success">@refInfo["PhanTramHoan"]%</strong> (Hoàn <strong>@Convert.ToDecimal(refInfo["SoTienHoan"]).ToString("N0")đ</strong>)
                                         </div>
                                     }
 
@@ -111,7 +129,7 @@
                                             <label class="form-label small fw-bold text-danger">Xác nhận hủy vé @maVe (Tự động giải phóng ghế trống)</label>
                                             <div class="input-group input-group-sm">
                                                 <input type="text" name="lyDo" class="form-control" placeholder="Nhập lý do hủy vé..." required />
-                                                <button type="submit" class="btn btn-danger">Xác nhận Hủy & Hoàn tiền</button>
+                                                <button type="submit" class="btn btn-danger">Xác nhận Hủy &amp; Hoàn tiền</button>
                                             </div>
                                         </form>
                                     </div>
@@ -188,6 +206,40 @@
                     </div>
                 }
             }
+        </div>
+
+        <!-- Modal mua thêm dịch vụ bổ sung (Hành lý / Suất ăn / Chọn ghế) thanh toán chuyển khoản -->
+        var dichVus = ViewBag.DichVuBoSung as List<Dictionary<string, object>> ?? new();
+        <div class="modal fade" id="lookupAddonModal" tabindex="-1">
+            <div class="modal-dialog">
+                <form method="post" asp-action="BuyAddonAfterBooking" class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title fw-bold">Mua thêm dịch vụ cho hồ sơ @don["MaDatCho"]</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <input type="hidden" name="maDatCho" value="@don["MaDatCho"]" />
+                        <input type="hidden" name="returnUrl" value="Lookup" />
+                        @foreach (var dv in dichVus)
+                        {
+                            <div class="form-check border rounded p-2 mb-2">
+                                <input class="form-check-input" type="checkbox" name="serviceIds" value="@dv["MaDV"]" id="lk_@dv["MaDV"]">
+                                <label class="form-check-label w-100" for="lk_@dv["MaDV"]">
+                                    <strong>@dv["TenDV"]</strong> (+@Convert.ToDecimal(dv["DonGia"]).ToString("N0")đ)
+                                    <small class="d-block text-muted">@dv["LoaiDV"]</small>
+                                </label>
+                            </div>
+                        }
+                        <div class="alert alert-info small mt-3 mb-0">
+                            Hình thức thanh toán: <strong>Chuyển khoản ngân hàng (VietQR)</strong>.
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                        <button type="submit" class="btn btn-primary fw-bold">Xác nhận &amp; Chuyển khoản</button>
+                    </div>
+                </form>
+            </div>
         </div>
     }
 </div>

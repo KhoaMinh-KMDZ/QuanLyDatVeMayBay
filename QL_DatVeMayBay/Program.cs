@@ -1,8 +1,12 @@
 ﻿using QL_DatVeMayBay.Data;
+using QL_DatVeMayBay.Hubs;
+using QL_DatVeMayBay.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllersWithViews();
+builder.Services.AddSignalR(); 
+builder.Services.AddHostedService<SeatHoldCleanupService>(); 
 
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
@@ -28,6 +32,8 @@ app.UseStaticFiles();
 app.UseRouting();
 app.UseSession();
 app.UseAuthorization();
+
+app.MapHub<SeatHub>("/seatHub"); 
 
 app.MapControllerRoute(
     name: "default",

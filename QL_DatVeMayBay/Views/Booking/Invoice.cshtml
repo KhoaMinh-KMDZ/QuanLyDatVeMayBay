@@ -3,6 +3,12 @@
     ViewData["Title"] = "Hóa đơn điện tử VAT";
     var hd = ViewBag.HoaDon as DataRow;
     var ves = ViewBag.DanhSachVe as DataTable;
+    var dvs = ViewBag.DanhSachDichVu as DataTable;
+    decimal tongTienDichVu = 0;
+    if (dvs != null)
+    {
+        foreach (DataRow d in dvs.Rows) tongTienDichVu += Convert.ToDecimal(d["ThanhTien"]);
+    }
 }
 
 <div class="container my-5">
@@ -50,16 +56,18 @@
             <thead class="table-light">
                 <tr>
                     <th class="text-center">STT</th>
-                    <th>Mã vé</th>
-                    <th>Hành khách & Hành trình</th>
-                    <th class="text-center">Hạng / Ghế</th>
+                    <th>Mã vé / Dịch vụ</th>
+                    <th>Nội dung chi tiết</th>
+                    <th class="text-center">Hạng / SL</th>
                     <th class="text-end">Thành tiền (VNĐ)</th>
                 </tr>
             </thead>
             <tbody>
+                @{
+                    int stt = 1;
+                }
                 @if (ves != null)
                 {
-                    int stt = 1;
                     foreach (DataRow v in ves.Rows)
                     {
                         <tr>
@@ -74,11 +82,29 @@
                         stt++;
                     }
                 }
+                @if (dvs != null)
+                {
+                    foreach (DataRow d in dvs.Rows)
+                    {
+                        <tr>
+                            <td class="text-center">@stt</td>
+                            <td class="fw-semibold text-primary">@d["LoaiDV"]</td>
+                            <td>@d["TenDV"] (Mã GD: @d["MaGiaoDich"])</td>
+                            <td class="text-center">x @d["SoLuong"]</td>
+                            <td class="text-end">@Convert.ToDecimal(d["ThanhTien"]).ToString("N0")</td>
+                        </tr>
+                        stt++;
+                    }
+                }
             </tbody>
             <tfoot>
                 <tr>
-                    <td colspan="4" class="text-end fw-semibold">Cộng tiền hàng (Đã bao gồm thuế & lệ phí sân bay):</td>
+                    <td colspan="4" class="text-end fw-semibold">Cộng tiền vé máy bay:</td>
                     <td class="text-end">@Convert.ToDecimal(hd["TongTienGoc"]).ToString("N0") VNĐ</td>
+                </tr>
+                <tr>
+                    <td colspan="4" class="text-end fw-semibold">Cộng dịch vụ bổ sung (Hành lý / Suất ăn / Ghế):</td>
+                    <td class="text-end">@tongTienDichVu.ToString("N0") VNĐ</td>
                 </tr>
                 <tr>
                     <td colspan="4" class="text-end text-success">Chiết khấu khuyến mãi:</td>
@@ -86,7 +112,7 @@
                 </tr>
                 <tr class="table-primary">
                     <td colspan="4" class="text-end fw-bold fs-6">TỔNG CỘNG TIỀN THANH TOÁN:</td>
-                    <td class="text-end fw-bold fs-6 text-danger">@Convert.ToDecimal(hd["TongTienSauGiam"]).ToString("N0") VNĐ</td>
+                    <td class="text-end fw-bold fs-6 text-danger">@((Convert.ToDecimal(hd["TongTienSauGiam"]) + tongTienDichVu).ToString("N0")) VNĐ</td>
                 </tr>
             </tfoot>
         </table>
@@ -98,7 +124,7 @@
             </div>
             <div class="col-6">
                 <div class="fw-bold">Đại diện SkyVN Airlines</div>
-                <div class="text-success fw-semibold mt-2"><i class="bi bi-patch-check-fill me-1"></i>Đã ký số điện tử hợp lệ</div>
+                <div class="text-success fw-semibold mt-2"><i class="bi bi-patch-check-fill me-1"></i>Đã ký số điện tử hợp lệ (Trong 72h)</div>
             </div>
         </div>
     </div>

@@ -1,433 +1,600 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Data.SqlClient;
-using QL_DatVeMayBay.Data;
+using QL_DatVeMayBay.Hubs;
 using System.Data;
 
 namespace QL_DatVeMayBay.Controllers
 {
     public class BookingController : Controller
     {
-        // ============================================================
-        // 1. SƠ ĐỒ GHẾ TRỰC QUAN & NHẬP THÔNG TIN HÀNH KHÁCH (UC02)
-        // ============================================================
-        [HttpGet]
-        public IActionResult SelectSeats(string maChuyenBay, string? maHangGhe)
+        private readonly string _connStr;
+        private readonly IHubContext<SeatHub> _hubContext;
+
+        public BookingController(IConfiguration config, IHubContext<SeatHub> hubContext)
         {
-            if (string.IsNullOrEmpty(maChuyenBay))
-                return RedirectToAction("Index", "Home");
+            _connStr = config.GetConnectionString("DefaultConnection")!;
+            _hubContext = hubContext;
+        }
 
-            DataTable dtCB = DatabaseHelper.ExecuteQuery(
-                "SELECT * FROM vw_DanhSachChuyenBayChiTiet WHERE MaChuyenBay = @MaCB",
-                CommandType.Text,
-                new SqlParameter("@MaCB", maChuyenBay));
+        // =========================================================================
+        // 1. CHỌN GHẾ NGỒI (MỘT CHIỀU / KHỨ HỒI + DỊCH VỤ BỔ SUNG)
+        // =========================================================================
+        [HttpGet]
+        public async Task<IActionResult> SelectSeats(string maChuyenBayDi, string? maChuyenBayVe, int soHanhKhach = 1)
+        {
+            using var conn = new SqlConnection(_connStr);
+            await conn.OpenAsync();
 
-            if (dtCB.Rows.Count == 0)
-                return RedirectToAction("Index", "Home");
+            ViewBag.ChuyenDi = await GetFlightDetailAsync(conn, maChuyenBayDi);
+            ViewBag.GheChuyenDi = await GetSeatsForFlightAsync(conn, maChuyenBayDi);
 
-            DataRow cb = dtCB.Rows[0];
-            string maMayBay = cb["MaMayBay"].ToString()!;
-            decimal giaCoBan = Convert.ToDecimal(cb["GiaVeCoBan"]);
+            if (!string.IsNullOrEmpty(maChuyenBayVe))
+            {
+                ViewBag.ChuyenVe = await GetFlightDetailAsync(conn, maChuyenBayVe);
+                ViewBag.GheChuyenVe = await GetSeatsForFlightAsync(conn, maChuyenBayVe);
+            }
 
-            DataTable dtGhe = DatabaseHelper.ExecuteQuery(@"
-                SELECT 
-                    g.MaGhe, g.SoGhe, g.MaHangGhe, hg.TenHangGhe, hg.HeSoGia,
-                    dbo.fn_TinhGiaVeThucTe(@GiaCoBan, g.MaHangGhe) AS GiaThucTe,
-                    CASE 
-                        WHEN g.TrangThai = 0 THEN N'Hỏng'
-                        WHEN EXISTS (
-                            SELECT 1 FROM VeMayBay v 
-                            WHERE v.MaChuyenBay = @MaCB AND v.MaGhe = g.MaGhe 
-                              AND v.TrangThai IN (N'Đã đặt chỗ', N'Đã xuất vé', N'Đã Check-in')
-                        ) THEN N'Đã đặt'
-                        ELSE N'Trống'
-                    END AS TinhTrang
-                FROM GheNgoi g
-                JOIN HangGhe hg ON g.MaHangGhe = hg.MaHangGhe
-                WHERE g.MaMayBay = @MaMayBay
-                ORDER BY g.SoGhe ASC",
-                CommandType.Text,
-                new SqlParameter("@GiaCoBan", giaCoBan),
-                new SqlParameter("@MaCB", maChuyenBay),
-                new SqlParameter("@MaMayBay", maMayBay));
-
-            ViewBag.ChuyenBay = cb;
-            ViewBag.DanhSachGhe = dtGhe;
-            ViewBag.KhuyenMais = DatabaseHelper.ExecuteQuery(
-                "SELECT MaKM, TenKM, PhanTramGiam, GiamToiDa, DonHangToiThieu FROM KhuyenMai WHERE TrangThai = 1 AND SoLuong > 0");
-
+            ViewBag.DichVuBoSung = await GetAddonServicesAsync(conn);
+            ViewBag.SoHanhKhach = soHanhKhach;
             return View();
         }
 
-        // ============================================================
-        // 2. KHÓA GHẾ & KHỞI TẠO MÃ PNR (sp_DatVeMayBay_Batch)
-        // ============================================================
+        // =========================================================================
+        // 2. GIỮ GHẾ 15 PHÚT ĐA LUỒNG + BẮN SIGNALR REALTIME
+        // =========================================================================
         [HttpPost]
-        public IActionResult CreateBooking(
-            string maChuyenBay,
-            int[] selectedMaGhe,
-            string[] tenHanhKhach,
-            string[] cccdHanhKhach,
-            string[] loaiHanhKhach,
-            string? maKM,
-            string? dichVuPhuTro,
-            string? ghiChuThem)
+        public async Task<IActionResult> HoldSeatsAndProceed(
+            string maChuyenBayDi,
+            string? maChuyenBayVe,
+            List<int> gheDiIds,
+            List<int>? gheVeIds,
+            List<string> tenHanhKhachs,
+            List<string> cccdHanhKhachs,
+            List<string>? selectedServiceIds,
+            string? maKM)
         {
-            if (selectedMaGhe == null || selectedMaGhe.Length == 0)
+            string maKH = HttpContext.Session.GetString("MaKH") ?? "KH00001";
+            if (gheDiIds == null || gheDiIds.Count < tenHanhKhachs.Count)
             {
-                TempData["Error"] = "Vui lòng chọn ít nhất 1 vị trí ghế trên sơ đồ!";
-                return RedirectToAction("SelectSeats", new { maChuyenBay });
+                TempData["Error"] = $"Vui lòng chọn đủ {tenHanhKhachs.Count} ghế cho chuyến đi!";
+                return RedirectToAction("SelectSeats", new { maChuyenBayDi, maChuyenBayVe, soHanhKhach = tenHanhKhachs.Count });
             }
 
-            string maKH = HttpContext.Session.GetString("UserType") == "KH"
-                ? (HttpContext.Session.GetString("UserId") ?? "KH00001")
-                : "KH00001";
+            using var conn = new SqlConnection(_connStr);
+            await conn.OpenAsync();
 
-            decimal giaCoBan = Convert.ToDecimal(DatabaseHelper.ExecuteScalar(
-                "SELECT GiaVeCoBan FROM ChuyenBay WHERE MaChuyenBay = @MaCB",
-                CommandType.Text,
-                new SqlParameter("@MaCB", maChuyenBay)));
-
-            DataTable dtVe = new DataTable();
-            dtVe.Columns.Add("MaGhe", typeof(int));
-            dtVe.Columns.Add("MaHangGhe", typeof(string));
-            dtVe.Columns.Add("TenHanhKhach", typeof(string));
-            dtVe.Columns.Add("CCCD_HanhKhach", typeof(string));
-            dtVe.Columns.Add("LoaiHanhKhach", typeof(string));
-            dtVe.Columns.Add("GiaVe", typeof(decimal));
-
-            for (int i = 0; i < selectedMaGhe.Length; i++)
-            {
-                int maGhe = selectedMaGhe[i];
-                DataTable dtInfoGhe = DatabaseHelper.ExecuteQuery(@"
-                    SELECT g.MaHangGhe, dbo.fn_TinhGiaVeThucTe(@GiaCoBan, g.MaHangGhe) AS GiaVe
-                    FROM GheNgoi g WHERE g.MaGhe = @MaGhe",
-                    CommandType.Text,
-                    new SqlParameter("@GiaCoBan", giaCoBan),
-                    new SqlParameter("@MaGhe", maGhe));
-
-                string maHangGhe = dtInfoGhe.Rows[0]["MaHangGhe"].ToString()!;
-                decimal giaVe = Convert.ToDecimal(dtInfoGhe.Rows[0]["GiaVe"]);
-
-                dtVe.Rows.Add(
-                    maGhe,
-                    maHangGhe,
-                    tenHanhKhach[i].Trim(),
-                    string.IsNullOrWhiteSpace(cccdHanhKhach[i]) ? "079204000000" : cccdHanhKhach[i].Trim(),
-                    loaiHanhKhach[i],
-                    giaVe
-                );
-            }
-
-            string maDatCho = "PNR" + Random.Shared.Next(100000, 999999);
-            string ghiChuFull = string.Join(" | ", new[] { dichVuPhuTro, ghiChuThem }.Where(s => !string.IsNullOrWhiteSpace(s)));
+            string pnrDi = "PNR" + Random.Shared.Next(100000, 999999);
+            string? pnrVe = !string.IsNullOrEmpty(maChuyenBayVe) ? "PNR" + Random.Shared.Next(100000, 999999) : null;
+            string loaiHanhTrinh = pnrVe != null ? "Khứ hồi" : "Một chiều";
 
             try
             {
-                DatabaseHelper.ExecuteQuery(
-                    "sp_DatVeMayBay_Batch",
-                    CommandType.StoredProcedure,
-                    new SqlParameter("@MaDatCho", maDatCho),
-                    new SqlParameter("@MaKH", maKH),
-                    new SqlParameter("@MaChuyenBay", maChuyenBay),
-                    new SqlParameter("@MaKM", string.IsNullOrWhiteSpace(maKM) ? DBNull.Value : maKM.Trim().ToUpper()),
-                    new SqlParameter("@GhiChu", string.IsNullOrWhiteSpace(ghiChuFull) ? DBNull.Value : ghiChuFull),
-                    DatabaseHelper.CreateTableParameter("@DSVe", "ChiTietDatVe_Type", dtVe)
-                );
+                await ExecuteBatchBookingAsync(conn, pnrDi, maKH, maChuyenBayDi, gheDiIds, tenHanhKhachs, cccdHanhKhachs, maKM, loaiHanhTrinh, pnrVe);
 
-                return RedirectToAction("Payment", new { maDatCho });
-            }
-            catch (SqlException ex)
-            {
-                TempData["Error"] = "Không thể giữ chỗ: " + ex.Message;
-                return RedirectToAction("SelectSeats", new { maChuyenBay });
-            }
-        }
+                await _hubContext.Clients.Group($"FLIGHT_{maChuyenBayDi}")
+                    .SendAsync("SeatStatusChanged", new { maChuyenBay = maChuyenBayDi, seatIds = gheDiIds, isOccupied = true });
 
-        // ============================================================
-        // 3. THANH TOÁN ĐA KÊNH & XUẤT HÓA ĐƠN ĐIỆN TỬ (UC04 + UC19)
-        // ============================================================
-        [HttpGet]
-        public IActionResult Payment(string maDatCho)
-        {
-            if (string.IsNullOrEmpty(maDatCho))
-                return RedirectToAction("Index", "Home");
+                if (pnrVe != null && gheVeIds != null && gheVeIds.Count > 0)
+                {
+                    await ExecuteBatchBookingAsync(conn, pnrVe, maKH, maChuyenBayVe!, gheVeIds, tenHanhKhachs, cccdHanhKhachs, null, loaiHanhTrinh, pnrDi);
 
-            DataTable dtDon = DatabaseHelper.ExecuteQuery(
-                "SELECT * FROM vw_LichSuDatVeKhachHang WHERE MaDatCho = @MaDatCho",
-                CommandType.Text,
-                new SqlParameter("@MaDatCho", maDatCho));
+                    await _hubContext.Clients.Group($"FLIGHT_{maChuyenBayVe}")
+                        .SendAsync("SeatStatusChanged", new { maChuyenBay = maChuyenBayVe, seatIds = gheVeIds, isOccupied = true });
+                }
 
-            if (dtDon.Rows.Count == 0)
-                return RedirectToAction("Index", "Home");
+                if (selectedServiceIds != null && selectedServiceIds.Count > 0)
+                {
+                    await InsertAddonServicesAsync(conn, pnrDi, selectedServiceIds, "Chờ thanh toán", null);
+                }
 
-            DataTable dtVes = DatabaseHelper.ExecuteQuery(
-                "SELECT * FROM vw_ChiTietVeVaHanhKhach WHERE MaDatCho = @MaDatCho",
-                CommandType.Text,
-                new SqlParameter("@MaDatCho", maDatCho));
-
-            ViewBag.DonDatCho = dtDon.Rows[0];
-            ViewBag.DanhSachVe = dtVes;
-            return View();
-        }
-
-        [HttpPost]
-        public IActionResult ConfirmPayment(string maDatCho, string phuongThuc)
-        {
-            string maHD = "HD" + Random.Shared.Next(100000, 999999);
-            string maGiaoDich = "TXN_" + DateTime.Now.ToString("yyyyMMddHHmmss");
-            string? maNV = HttpContext.Session.GetString("UserType") == "NV"
-                ? HttpContext.Session.GetString("UserId")
-                : null;
-
-            try
-            {
-                DatabaseHelper.ExecuteQuery(
-                    "sp_ThanhToanDonVe",
-                    CommandType.StoredProcedure,
-                    new SqlParameter("@MaHD", maHD),
-                    new SqlParameter("@MaDatCho", maDatCho),
-                    new SqlParameter("@MaNV", (object?)maNV ?? DBNull.Value),
-                    new SqlParameter("@PhuongThuc", phuongThuc),
-                    new SqlParameter("@MaGiaoDich", maGiaoDich)
-                );
-
-                TempData["Success"] = $"Thanh toán thành công! Hóa đơn {maHD} đã được lập và vé điện tử đã xuất.";
-                return RedirectToAction("Lookup", new { maDatCho });
+                return RedirectToAction("Payment", new { maDatCho = pnrDi, maDatChoVe = pnrVe });
             }
             catch (SqlException ex)
             {
                 TempData["Error"] = ex.Message;
-                return RedirectToAction("Payment", new { maDatCho });
+                return RedirectToAction("SelectSeats", new { maChuyenBayDi, maChuyenBayVe, soHanhKhach = tenHanhKhachs.Count });
             }
         }
 
+        // =========================================================================
+        // 3. THANH TOÁN ONLINE (VIETQR / MOMO / ZALOPAY / THẺ)
+        // =========================================================================
         [HttpGet]
-        public IActionResult Invoice(string maDatCho)
+        public async Task<IActionResult> Payment(string maDatCho, string? maDatChoVe)
         {
-            if (string.IsNullOrWhiteSpace(maDatCho))
-                return RedirectToAction("Lookup");
+            using var conn = new SqlConnection(_connStr);
+            await conn.OpenAsync();
 
-            DataTable dtHD = DatabaseHelper.ExecuteQuery(@"
-                SELECT hd.*, ('TXN-' + hd.MaHD) AS MaGiaoDich, pdc.MaKH, kh.TenKH, kh.SDT, kh.Email, kh.DiaChi, kh.CCCD,
-                       pdc.TongTienGoc, pdc.TienGiam, pdc.TongTienSauGiam, pdc.GhiChu
-                FROM HoaDon hd
-                JOIN PhieuDatCho pdc ON hd.MaDatCho = pdc.MaDatCho
-                JOIN KhachHang kh ON pdc.MaKH = kh.MaKH
-                WHERE hd.MaDatCho = @PNR",
-                CommandType.Text,
-                new SqlParameter("@PNR", maDatCho.Trim().ToUpper()));
+            var donDi = await GetBookingHeaderDictAsync(conn, maDatCho);
+            if (donDi == null) return NotFound();
 
-            if (dtHD.Rows.Count == 0)
+            decimal tongThanhToan = Convert.ToDecimal(donDi["TongTienSauGiam"]);
+            if (!string.IsNullOrEmpty(maDatChoVe))
             {
-                TempData["Error"] = "Đơn đặt chỗ này chưa phát sinh hóa đơn thanh toán!";
-                return RedirectToAction("Lookup", new { maDatCho });
+                var donVe = await GetBookingHeaderDictAsync(conn, maDatChoVe);
+                if (donVe != null)
+                {
+                    ViewBag.DonVe = donVe;
+                    tongThanhToan += Convert.ToDecimal(donVe["TongTienSauGiam"]);
+                }
             }
 
-            ViewBag.HoaDon = dtHD.Rows[0];
-            ViewBag.DanhSachVe = DatabaseHelper.ExecuteQuery(
-                "SELECT * FROM vw_ChiTietVeVaHanhKhach WHERE MaDatCho = @PNR",
-                CommandType.Text,
-                new SqlParameter("@PNR", maDatCho.Trim().ToUpper()));
+            using (var cmdDV = new SqlCommand("SELECT ISNULL(SUM(ThanhTien), 0) FROM ChiTietDichVuDatVe WHERE MaDatCho = @Ma AND TrangThaiThanhToan = N'Chờ thanh toán'", conn))
+            {
+                cmdDV.Parameters.AddWithValue("@Ma", maDatCho);
+                tongThanhToan += Convert.ToDecimal(await cmdDV.ExecuteScalarAsync());
+            }
+
+            ViewBag.DonDi = donDi;
+            ViewBag.TongThanhToan = tongThanhToan;
+            return View();
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> ConfirmOnlinePayment(string maDatCho, string? maDatChoVe, string phuongThuc)
+        {
+            using var conn = new SqlConnection(_connStr);
+            await conn.OpenAsync();
+
+            string maGD = "ONLINE_" + DateTime.Now.ToString("yyyyMMddHHmmss");
+
+            try
+            {
+                await CallThanhToanSPAsync(conn, "HD" + Random.Shared.Next(10000, 99999), maDatCho, phuongThuc, maGD);
+
+                if (!string.IsNullOrEmpty(maDatChoVe))
+                {
+                    await CallThanhToanSPAsync(conn, "HD" + Random.Shared.Next(10000, 99999), maDatChoVe, phuongThuc, maGD + "_RET");
+                }
+
+                using var cmdDV = new SqlCommand(@"
+                    UPDATE ChiTietDichVuDatVe 
+                    SET TrangThaiThanhToan = N'Đã thanh toán', PhuongThucTT = @PT, MaGiaoDich = @GD, NgayThanhToan = GETDATE()
+                    WHERE MaDatCho = @Ma AND TrangThaiThanhToan = N'Chờ thanh toán';", conn);
+                cmdDV.Parameters.AddWithValue("@PT", phuongThuc);
+                cmdDV.Parameters.AddWithValue("@GD", maGD);
+                cmdDV.Parameters.AddWithValue("@Ma", maDatCho);
+                await cmdDV.ExecuteNonQueryAsync();
+
+                TempData["Success"] = $"Thanh toán thành công qua {phuongThuc}! Mã đặt chỗ: {maDatCho}";
+                return RedirectToAction("MyBookings");
+            }
+            catch (SqlException ex)
+            {
+                TempData["Error"] = ex.Message;
+                return RedirectToAction("MyBookings");
+            }
+        }
+
+        // =========================================================================
+        // 4. VÉ CỦA TÔI & MUA THÊM DỊCH VỤ SAU KHI ĐẶT VÉ THÀNH CÔNG
+        // =========================================================================
+        [HttpGet]
+        public async Task<IActionResult> MyBookings()
+        {
+            string maKH = HttpContext.Session.GetString("MaKH") ?? "KH00001";
+            using var conn = new SqlConnection(_connStr);
+            await conn.OpenAsync();
+
+            string sql = @"
+                SELECT p.MaDatCho, p.NgayDat, p.TongTienSauGiam, p.TrangThai, p.LoaiHanhTrinh, p.MaDatChoLienKet,
+                       hd.MaHD, hd.NgayThanhToan, hd.DaXuatHoaDon,
+                       CASE WHEN hd.NgayThanhToan IS NOT NULL AND DATEDIFF(MINUTE, hd.NgayThanhToan, GETDATE()) <= 4320 THEN 1 ELSE 0 END AS DuocXuatHoaDon72h,
+                       (SELECT ISNULL(SUM(ThanhTien), 0) FROM ChiTietDichVuDatVe d WHERE d.MaDatCho = p.MaDatCho AND d.TrangThaiThanhToan = N'Đã thanh toán') AS TienDichVuThem
+                FROM PhieuDatCho p
+                LEFT JOIN HoaDon hd ON p.MaDatCho = hd.MaDatCho
+                WHERE p.MaKH = @MaKH
+                ORDER BY p.NgayDat DESC;";
+
+            var list = new List<Dictionary<string, object>>();
+            using (var cmd = new SqlCommand(sql, conn))
+            {
+                cmd.Parameters.AddWithValue("@MaKH", maKH);
+                using var rd = await cmd.ExecuteReaderAsync();
+                while (await rd.ReadAsync())
+                {
+                    var row = new Dictionary<string, object>();
+                    for (int i = 0; i < rd.FieldCount; i++) row[rd.GetName(i)] = rd.IsDBNull(i) ? "" : rd.GetValue(i);
+                    list.Add(row);
+                }
+            }
+
+            ViewBag.Bookings = list;
+            ViewBag.DichVuBoSung = await GetAddonServicesAsync(conn);
+            return View();
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> BuyAddonAfterBooking(string maDatCho, List<string> serviceIds, string? returnUrl)
+        {
+            if (serviceIds == null || serviceIds.Count == 0)
+            {
+                TempData["Error"] = "Vui lòng chọn ít nhất 1 dịch vụ bổ sung.";
+                return returnUrl == "Lookup" ? RedirectToAction("Lookup", new { maDatCho }) : RedirectToAction("MyBookings");
+            }
+
+            using var conn = new SqlConnection(_connStr);
+            await conn.OpenAsync();
+
+            string maGD = "ADDON_QR_" + DateTime.Now.ToString("yyyyMMddHHmmss");
+            await InsertAddonServicesAsync(conn, maDatCho, serviceIds, "Đã thanh toán", maGD);
+
+            TempData["Success"] = $"Đã mua thêm dịch vụ cho mã vé {maDatCho} và thanh toán chuyển khoản VietQR thành công!";
+            return returnUrl == "Lookup" ? RedirectToAction("Lookup", new { maDatCho }) : RedirectToAction("MyBookings");
+        }
+
+        // =========================================================================
+        // 5. HÓA ĐƠN ĐIỆN TỬ VAT (CHỈ CHO PHÉP TRONG VÒNG 72 TIẾNG SAU KHI MUA VÉ)
+        // =========================================================================
+        [HttpGet]
+        public async Task<IActionResult> Invoice(string maDatCho)
+        {
+            using var conn = new SqlConnection(_connStr);
+            await conn.OpenAsync();
+
+            try
+            {
+                // 1. Gọi SP kiểm tra quy định 72 tiếng
+                using (var cmdCheck = new SqlCommand("sp_XuatHoaDonTrong72Gio", conn))
+                {
+                    cmdCheck.CommandType = CommandType.StoredProcedure;
+                    cmdCheck.Parameters.AddWithValue("@MaDatCho", maDatCho);
+                    await cmdCheck.ExecuteNonQueryAsync();
+                }
+
+                // 2. Lấy DataRow HoaDon đầy đủ thông tin khách hàng & phiếu đặt chỗ cho Invoice.cshtml
+                string sqlHD = @"
+                    SELECT hd.MaHD, hd.MaDatCho, hd.NgayLap, hd.TongTien, hd.PhuongThuc,
+                           ISNULL(hd.MaGiaoDichNganHang, 'TXN_ONLINE') AS MaGiaoDich, hd.TrangThai,
+                           pdc.TongTienGoc, pdc.TienGiam, pdc.TongTienSauGiam,
+                           kh.TenKH, kh.CCCD, kh.SDT, kh.Email, kh.DiaChi
+                    FROM HoaDon hd
+                    JOIN PhieuDatCho pdc ON hd.MaDatCho = pdc.MaDatCho
+                    JOIN KhachHang kh ON pdc.MaKH = kh.MaKH
+                    WHERE hd.MaDatCho = @Ma;";
+                var dtHD = new DataTable();
+                using (var da = new SqlDataAdapter(sqlHD, conn))
+                {
+                    da.SelectCommand.Parameters.AddWithValue("@Ma", maDatCho);
+                    da.Fill(dtHD);
+                }
+                if (dtHD.Rows.Count == 0) return NotFound();
+                ViewBag.HoaDon = dtHD.Rows[0];
+
+                // 3. Lấy danh sách vé
+                var dtVe = new DataTable();
+                using (var daVe = new SqlDataAdapter("SELECT * FROM vw_ChiTietVeVaHanhKhach WHERE MaDatCho = @Ma", conn))
+                {
+                    daVe.SelectCommand.Parameters.AddWithValue("@Ma", maDatCho);
+                    daVe.Fill(dtVe);
+                }
+                ViewBag.DanhSachVe = dtVe;
+
+                // 4. Lấy danh sách dịch vụ mua thêm (Hành lý, Suất ăn, Chọn ghế)
+                var dtDV = new DataTable();
+                string sqlDV = @"
+                    SELECT dv.TenDV, dv.LoaiDV, ct.SoLuong, ct.ThanhTien, ct.MaGiaoDich
+                    FROM ChiTietDichVuDatVe ct
+                    JOIN DichVuBoSung dv ON ct.MaDV = dv.MaDV
+                    WHERE ct.MaDatCho = @Ma AND ct.TrangThaiThanhToan = N'Đã thanh toán';";
+                using (var daDV = new SqlDataAdapter(sqlDV, conn))
+                {
+                    daDV.SelectCommand.Parameters.AddWithValue("@Ma", maDatCho);
+                    daDV.Fill(dtDV);
+                }
+                ViewBag.DanhSachDichVu = dtDV;
+
+                return View();
+            }
+            catch (SqlException ex)
+            {
+                TempData["Error"] = ex.Message; // Quá 72 giờ kể từ lúc thanh toán
+                return RedirectToAction("MyBookings");
+            }
+        }
+
+        // =========================================================================
+        // 6. TRA CỨU PNR / HỦY VÉ / ĐỔI VÉ / ĐÁNH GIÁ (GIỮ NGUYÊN LOGIC LOOKUP CỦA NHÓM)
+        // =========================================================================
+        [HttpGet]
+        public async Task<IActionResult> Lookup(string? maDatCho)
+        {
+            if (string.IsNullOrWhiteSpace(maDatCho)) return View();
+
+            using var conn = new SqlConnection(_connStr);
+            await conn.OpenAsync();
+
+            var dtDon = new DataTable();
+            string sqlDon = @"
+                SELECT v.*,
+                       CASE WHEN v.NgayThanhToan IS NOT NULL AND DATEDIFF(MINUTE, v.NgayThanhToan, GETDATE()) <= 4320 THEN 1 ELSE 0 END AS DuocXuatHoaDon72h
+                FROM vw_LichSuDatVeKhachHang v
+                WHERE v.MaDatCho = @Ma;";
+            using (var da = new SqlDataAdapter(sqlDon, conn))
+            {
+                da.SelectCommand.Parameters.AddWithValue("@Ma", maDatCho.Trim().ToUpper());
+                da.Fill(dtDon);
+            }
+
+            if (dtDon.Rows.Count == 0)
+            {
+                ViewBag.NotFound = $"Không tìm thấy hồ sơ đặt chỗ với mã PNR: {maDatCho}";
+                return View();
+            }
+
+            ViewBag.DonDatCho = dtDon.Rows[0];
+
+            var dtVe = new DataTable();
+            using (var daVe = new SqlDataAdapter("SELECT * FROM vw_ChiTietVeVaHanhKhach WHERE MaDatCho = @Ma", conn))
+            {
+                daVe.SelectCommand.Parameters.AddWithValue("@Ma", maDatCho.Trim().ToUpper());
+                daVe.Fill(dtVe);
+            }
+            ViewBag.DanhSachVe = dtVe;
+
+            // Tính trước tiền hoàn theo Luật 72h cho từng vé
+            var refundMap = new Dictionary<string, DataRow>();
+            foreach (DataRow v in dtVe.Rows)
+            {
+                string maVe = v["MaVe"].ToString()!;
+                var dtRef = new DataTable();
+                using var daRef = new SqlDataAdapter("SELECT * FROM dbo.fn_TinhTienHoanTraHuyVe(@MaVe)", conn);
+                daRef.SelectCommand.Parameters.AddWithValue("@MaVe", maVe);
+                daRef.Fill(dtRef);
+                if (dtRef.Rows.Count > 0) refundMap[maVe] = dtRef.Rows[0];
+            }
+            ViewBag.RefundPreview = refundMap;
+
+            // Lấy danh sách chuyến bay khác để đổi vé & dịch vụ bổ sung
+            var dtCB = new DataTable();
+            using (var daCB = new SqlDataAdapter("SELECT * FROM vw_DanhSachChuyenBayChiTiet WHERE TrangThaiChuyenBay = N'Đang mở bán' AND SoGheTrong > 0", conn))
+            {
+                daCB.Fill(dtCB);
+            }
+            ViewBag.ChuyenBayKhac = dtCB;
+            ViewBag.DichVuBoSung = await GetAddonServicesAsync(conn);
 
             return View();
         }
 
-        // ============================================================
-        // 4. CỔNG CHUYẾN BAY CỦA TÔI (DÀNH CHO KHÁCH ĐÃ ĐĂNG NHẬP)
-        // ============================================================
         [HttpGet]
-        public IActionResult MyBookings()
+        public async Task<IActionResult> GetAvailableSeats(string maChuyenBay)
         {
-            if (HttpContext.Session.GetString("UserType") != "KH")
-                return RedirectToAction("Login", "Account");
-
-            string maKH = HttpContext.Session.GetString("UserId")!;
-            DataTable dt = DatabaseHelper.ExecuteQuery(
-                "SELECT * FROM vw_LichSuDatVeKhachHang WHERE MaKH = @MaKH ORDER BY NgayDat DESC",
-                CommandType.Text,
-                new SqlParameter("@MaKH", maKH));
-
-            return View(dt);
-        }
-
-        // ============================================================
-        // 5. TRA CỨU PNR, HỦY VÉ (LUẬT 72H), ĐỔI VÉ & ĐÁNH GIÁ SAO
-        // ============================================================
-        [HttpGet]
-        public IActionResult Lookup(string? maDatCho)
-        {
-            if (!string.IsNullOrWhiteSpace(maDatCho))
-            {
-                string pnr = maDatCho.Trim().ToUpper();
-                DataTable dtDon = DatabaseHelper.ExecuteQuery(
-                    "SELECT * FROM vw_LichSuDatVeKhachHang WHERE MaDatCho = @PNR",
-                    CommandType.Text,
-                    new SqlParameter("@PNR", pnr));
-
-                if (dtDon.Rows.Count > 0)
-                {
-                    ViewBag.DonDatCho = dtDon.Rows[0];
-                    DataTable dtVes = DatabaseHelper.ExecuteQuery(
-                        "SELECT * FROM vw_ChiTietVeVaHanhKhach WHERE MaDatCho = @PNR",
-                        CommandType.Text,
-                        new SqlParameter("@PNR", pnr));
-                    ViewBag.DanhSachVe = dtVes;
-
-                    var refundPreview = new Dictionary<string, DataRow>();
-                    foreach (DataRow v in dtVes.Rows)
-                    {
-                        string maVe = v["MaVe"].ToString()!;
-                        DataTable dtRef = DatabaseHelper.ExecuteQuery(
-                            "SELECT * FROM fn_TinhTienHoanTraHuyVe(@MaVe)",
-                            CommandType.Text,
-                            new SqlParameter("@MaVe", maVe));
-                        if (dtRef.Rows.Count > 0)
-                            refundPreview[maVe] = dtRef.Rows[0];
-                    }
-                    ViewBag.RefundPreview = refundPreview;
-
-                    ViewBag.ChuyenBayKhac = DatabaseHelper.ExecuteQuery(@"
-                        SELECT TOP 20 cb.MaChuyenBay, hhk.TenHang, tb.MaTuyenBay, cb.NgayGioBay, cb.GiaVeCoBan
-                        FROM ChuyenBay cb
-                        JOIN MayBay mb ON cb.MaMayBay = mb.MaMayBay
-                        JOIN HangHangKhong hhk ON mb.MaHang = hhk.MaHang
-                        JOIN TuyenBay tb ON cb.MaTuyenBay = tb.MaTuyenBay
-                        WHERE cb.TrangThai = N'Đang mở bán' AND cb.SoGheTrong > 0
-                        ORDER BY cb.NgayGioBay ASC");
-                }
-                else
-                {
-                    ViewBag.NotFound = $"Không tìm thấy hồ sơ đặt chỗ với mã PNR: {pnr}";
-                }
-            }
-            return View();
-        }
-
-        // API JSON trả về danh sách ghế trống của chuyến bay khi đổi vé
-        [HttpGet]
-        public IActionResult GetAvailableSeats(string maChuyenBay)
-        {
-            DataTable dt = DatabaseHelper.ExecuteQuery(@"
+            using var conn = new SqlConnection(_connStr);
+            await conn.OpenAsync();
+            string sql = @"
                 SELECT g.MaGhe, g.SoGhe, g.MaHangGhe, hg.TenHangGhe,
                        dbo.fn_TinhGiaVeThucTe(cb.GiaVeCoBan, g.MaHangGhe) AS GiaThucTe
                 FROM GheNgoi g
                 JOIN HangGhe hg ON g.MaHangGhe = hg.MaHangGhe
                 JOIN ChuyenBay cb ON g.MaMayBay = cb.MaMayBay
                 WHERE cb.MaChuyenBay = @MaCB AND g.TrangThai = 1
-                  AND NOT EXISTS (
-                      SELECT 1 FROM VeMayBay v 
-                      WHERE v.MaChuyenBay = @MaCB AND v.MaGhe = g.MaGhe 
-                        AND v.TrangThai IN (N'Đã đặt chỗ', N'Đã xuất vé', N'Đã Check-in')
+                  AND g.MaGhe NOT IN (
+                      SELECT v.MaGhe FROM VeMayBay v 
+                      WHERE v.MaChuyenBay = @MaCB AND v.TrangThai IN (N'Đã đặt chỗ', N'Đã xuất vé', N'Đã Check-in')
                   )
-                ORDER BY g.SoGhe ASC",
-                CommandType.Text,
-                new SqlParameter("@MaCB", maChuyenBay));
-
+                ORDER BY g.SoGhe;";
+            using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@MaCB", maChuyenBay);
             var list = new List<object>();
-            foreach (DataRow r in dt.Rows)
+            using var rd = await cmd.ExecuteReaderAsync();
+            while (await rd.ReadAsync())
             {
                 list.Add(new
                 {
-                    maGhe = Convert.ToInt32(r["MaGhe"]),
-                    soGhe = r["SoGhe"].ToString(),
-                    maHangGhe = r["MaHangGhe"].ToString(),
-                    tenHangGhe = r["TenHangGhe"].ToString(),
-                    giaThucTe = Convert.ToDecimal(r["GiaThucTe"])
+                    maGhe = rd.GetInt32(0),
+                    soGhe = rd.GetString(1),
+                    maHangGhe = rd.GetString(2),
+                    tenHangGhe = rd.GetString(3),
+                    giaThucTe = rd.GetDecimal(4)
                 });
             }
             return Json(list);
         }
 
         [HttpPost]
-        public IActionResult CancelTicket(string maDatCho, string maVe, string lyDo)
+        public async Task<IActionResult> CancelTicket(string maDatCho, string maVe, string lyDo)
         {
-            string? maNV = HttpContext.Session.GetString("UserType") == "NV"
-                ? HttpContext.Session.GetString("UserId")
-                : null;
-
+            using var conn = new SqlConnection(_connStr);
+            await conn.OpenAsync();
             try
             {
-                DataTable dt = DatabaseHelper.ExecuteQuery(
-                    "sp_XuLyHuyVeVaHoanTien",
-                    CommandType.StoredProcedure,
-                    new SqlParameter("@MaVe", maVe),
-                    new SqlParameter("@LyDo", string.IsNullOrWhiteSpace(lyDo) ? "Khách yêu cầu hủy vé trực tuyến" : lyDo),
-                    new SqlParameter("@MaNVXuLy", (object?)maNV ?? DBNull.Value)
-                );
-
-                // Đồng bộ trạng thái PhieuDatCho nếu tất cả vé trong đơn đều đã hủy
-                DatabaseHelper.ExecuteNonQuery(@"
-                    IF NOT EXISTS (SELECT 1 FROM VeMayBay WHERE MaDatCho = @PNR AND TrangThai <> N'Đã hủy')
-                        UPDATE PhieuDatCho SET TrangThai = N'Đã hủy' WHERE MaDatCho = @PNR",
-                    CommandType.Text,
-                    new SqlParameter("@PNR", maDatCho));
-
-                DataRow r = dt.Rows[0];
-                TempData["Success"] = $"Đã hủy vé {maVe}! Tỷ lệ hoàn theo Luật 72h: {r["PhanTramHoan"]}% — Số tiền hoàn khách nhận: {Convert.ToDecimal(r["SoTienHoanKhachNhan"]):N0} VNĐ.";
+                using var cmd = new SqlCommand("sp_XuLyHuyVeVaHoanTien", conn);
+                cmd.CommandType = CommandType.StoredProcedure;
+                cmd.Parameters.AddWithValue("@MaVe", maVe);
+                cmd.Parameters.AddWithValue("@LyDo", lyDo);
+                cmd.Parameters.AddWithValue("@MaNVXuLy", DBNull.Value);
+                await cmd.ExecuteNonQueryAsync();
+                TempData["Success"] = $"Đã hủy vé {maVe} và tự động giải phóng ghế trống!";
             }
             catch (SqlException ex)
             {
                 TempData["Error"] = ex.Message;
             }
-
             return RedirectToAction("Lookup", new { maDatCho });
         }
 
         [HttpPost]
-        public IActionResult RescheduleTicket(string maDatCho, string maVeCu, string maChuyenBayMoi, int maGheMoi, string maHangGheMoi)
+        public async Task<IActionResult> RescheduleTicket(string maDatCho, string maVeCu, string maChuyenBayMoi, int maGheMoi, string maHangGheMoi)
         {
-            string? maNV = HttpContext.Session.GetString("UserType") == "NV"
-                ? HttpContext.Session.GetString("UserId")
-                : null;
-
+            using var conn = new SqlConnection(_connStr);
+            await conn.OpenAsync();
             try
             {
-                DataTable dt = DatabaseHelper.ExecuteQuery(
-                    "sp_DoiVeMayBay",
-                    CommandType.StoredProcedure,
-                    new SqlParameter("@MaVeCu", maVeCu),
-                    new SqlParameter("@MaChuyenBayMoi", maChuyenBayMoi),
-                    new SqlParameter("@MaGheMoi", maGheMoi),
-                    new SqlParameter("@MaHangGheMoi", maHangGheMoi),
-                    new SqlParameter("@MaNVXuLy", (object?)maNV ?? DBNull.Value)
-                );
-
-                DataRow r = dt.Rows[0];
-                TempData["Success"] = $"Đổi vé thành công sang mã vé mới {r["MaVeMoi"]}! Chênh lệch giá: {Convert.ToDecimal(r["TienChenhLechGia"]):N0}đ + Phí đổi: {Convert.ToDecimal(r["PhiDichVuDoi"]):N0}đ = Tổng thu thêm: {Convert.ToDecimal(r["TongTienThanhToanThem"]):N0} VNĐ.";
+                using var cmd = new SqlCommand("sp_DoiVeMayBay", conn);
+                cmd.CommandType = CommandType.StoredProcedure;
+                cmd.Parameters.AddWithValue("@MaVeCu", maVeCu);
+                cmd.Parameters.AddWithValue("@MaChuyenBayMoi", maChuyenBayMoi);
+                cmd.Parameters.AddWithValue("@MaGheMoi", maGheMoi);
+                cmd.Parameters.AddWithValue("@MaHangGheMoi", maHangGheMoi);
+                cmd.Parameters.AddWithValue("@MaNVXuLy", DBNull.Value);
+                await cmd.ExecuteNonQueryAsync();
+                TempData["Success"] = $"Đổi vé {maVeCu} sang chuyến {maChuyenBayMoi} thành công!";
             }
-            catch (Exception ex)
+            catch (SqlException ex)
             {
                 TempData["Error"] = ex.Message;
             }
-
             return RedirectToAction("Lookup", new { maDatCho });
         }
 
         [HttpPost]
-        public IActionResult SubmitReview(string maDatCho, string maChuyenBay, int soSao, string binhLuan)
+        public async Task<IActionResult> SubmitReview(string maDatCho, string maChuyenBay, int soSao, string binhLuan)
         {
-            try
-            {
-                string maKH = HttpContext.Session.GetString("UserType") == "KH"
-                    ? (HttpContext.Session.GetString("UserId") ?? "KH00001")
-                    : (DatabaseHelper.ExecuteScalar("SELECT MaKH FROM PhieuDatCho WHERE MaDatCho = @PNR", CommandType.Text, new SqlParameter("@PNR", maDatCho))?.ToString() ?? "KH00001");
-
-                DatabaseHelper.ExecuteNonQuery(@"
-                    INSERT INTO DanhGiaChuyenBay (MaKH, MaChuyenBay, SoSao, BinhLuan)
-                    VALUES (@MaKH, @MaCB, @SoSao, @BinhLuan)",
-                    CommandType.Text,
-                    new SqlParameter("@MaKH", maKH),
-                    new SqlParameter("@MaCB", maChuyenBay),
-                    new SqlParameter("@SoSao", soSao),
-                    new SqlParameter("@BinhLuan", binhLuan));
-
-                TempData["Success"] = "Cảm ơn bạn đã gửi đánh giá trải nghiệm chuyến bay!";
-            }
-            catch (Exception ex)
-            {
-                TempData["Error"] = "Không thể gửi đánh giá: " + ex.Message;
-            }
+            string maKH = HttpContext.Session.GetString("MaKH") ?? "KH00001";
+            using var conn = new SqlConnection(_connStr);
+            await conn.OpenAsync();
+            using var cmd = new SqlCommand("INSERT INTO DanhGiaChuyenBay (MaKH, MaChuyenBay, SoSao, NoiDung) VALUES (@MaKH, @MaCB, @Sao, @ND)", conn);
+            cmd.Parameters.AddWithValue("@MaKH", maKH);
+            cmd.Parameters.AddWithValue("@MaCB", maChuyenBay);
+            cmd.Parameters.AddWithValue("@Sao", soSao);
+            cmd.Parameters.AddWithValue("@ND", binhLuan);
+            await cmd.ExecuteNonQueryAsync();
+            TempData["Success"] = "Cảm ơn bạn đã gửi đánh giá chuyến bay!";
             return RedirectToAction("Lookup", new { maDatCho });
+        }
+
+        // ================= HELPER METHODS =================
+        private async Task<Dictionary<string, object>> GetFlightDetailAsync(SqlConnection conn, string maCB)
+        {
+            using var cmd = new SqlCommand("SELECT * FROM vw_DanhSachChuyenBayChiTiet WHERE MaChuyenBay = @Ma", conn);
+            cmd.Parameters.AddWithValue("@Ma", maCB);
+            var row = new Dictionary<string, object>();
+            using var rd = await cmd.ExecuteReaderAsync();
+            if (await rd.ReadAsync())
+                for (int i = 0; i < rd.FieldCount; i++) row[rd.GetName(i)] = rd.IsDBNull(i) ? "" : rd.GetValue(i);
+            return row;
+        }
+
+        private async Task<List<Dictionary<string, object>>> GetSeatsForFlightAsync(SqlConnection conn, string maCB)
+        {
+            string sql = @"
+                SELECT g.MaGhe, g.SoGhe, g.MaHangGhe, hg.TenHangGhe, hg.HeSoGia,
+                       CASE WHEN EXISTS (
+                           SELECT 1 FROM VeMayBay v 
+                           WHERE v.MaChuyenBay = @MaCB AND v.MaGhe = g.MaGhe 
+                             AND v.TrangThai IN (N'Đã đặt chỗ', N'Đã xuất vé', N'Đã Check-in')
+                       ) THEN 1 ELSE 0 END AS DaBiDat
+                FROM GheNgoi g
+                JOIN HangGhe hg ON g.MaHangGhe = hg.MaHangGhe
+                JOIN ChuyenBay cb ON g.MaMayBay = cb.MaMayBay
+                WHERE cb.MaChuyenBay = @MaCB
+                ORDER BY g.SoGhe ASC;";
+
+            using var cmd = new SqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("@MaCB", maCB);
+            var list = new List<Dictionary<string, object>>();
+            using var rd = await cmd.ExecuteReaderAsync();
+            while (await rd.ReadAsync())
+            {
+                var r = new Dictionary<string, object>();
+                for (int i = 0; i < rd.FieldCount; i++) r[rd.GetName(i)] = rd.GetValue(i);
+                list.Add(r);
+            }
+            return list;
+        }
+
+        private async Task<List<Dictionary<string, object>>> GetAddonServicesAsync(SqlConnection conn)
+        {
+            using var cmd = new SqlCommand("SELECT * FROM DichVuBoSung WHERE TrangThai = 1", conn);
+            var list = new List<Dictionary<string, object>>();
+            using var rd = await cmd.ExecuteReaderAsync();
+            while (await rd.ReadAsync())
+            {
+                var r = new Dictionary<string, object>();
+                for (int i = 0; i < rd.FieldCount; i++) r[rd.GetName(i)] = rd.IsDBNull(i) ? "" : rd.GetValue(i);
+                list.Add(r);
+            }
+            return list;
+        }
+
+        private async Task ExecuteBatchBookingAsync(
+            SqlConnection conn, string pnr, string maKH, string maCB,
+            List<int> seatIds, List<string> names, List<string> cccds,
+            string? maKM, string loaiHanhTrinh, string? pnrLienKet)
+        {
+            var dt = new DataTable();
+            dt.Columns.Add("MaGhe", typeof(int));
+            dt.Columns.Add("MaHangGhe", typeof(string));
+            dt.Columns.Add("TenHanhKhach", typeof(string));
+            dt.Columns.Add("CCCD_HanhKhach", typeof(string));
+            dt.Columns.Add("LoaiHanhKhach", typeof(string));
+            dt.Columns.Add("GiaVe", typeof(decimal));
+
+            for (int i = 0; i < seatIds.Count; i++)
+            {
+                string sqlInfo = @"
+                    SELECT g.MaHangGhe, dbo.fn_TinhGiaVeThucTe(cb.GiaVeCoBan, g.MaHangGhe)
+                    FROM GheNgoi g CROSS JOIN ChuyenBay cb
+                    WHERE g.MaGhe = @MaGhe AND cb.MaChuyenBay = @MaCB;";
+                using var cmdInfo = new SqlCommand(sqlInfo, conn);
+                cmdInfo.Parameters.AddWithValue("@MaGhe", seatIds[i]);
+                cmdInfo.Parameters.AddWithValue("@MaCB", maCB);
+                using var rd = await cmdInfo.ExecuteReaderAsync();
+                await rd.ReadAsync();
+                string hangGhe = rd.GetString(0);
+                decimal giaVe = rd.GetDecimal(1);
+                await rd.CloseAsync();
+
+                dt.Rows.Add(seatIds[i], hangGhe, names[i], cccds.ElementAtOrDefault(i) ?? "", "Người lớn", giaVe);
+            }
+
+            using var cmd = new SqlCommand("sp_DatVeMayBay_Batch", conn);
+            cmd.CommandType = CommandType.StoredProcedure;
+            cmd.Parameters.AddWithValue("@MaDatCho", pnr);
+            cmd.Parameters.AddWithValue("@MaKH", maKH);
+            cmd.Parameters.AddWithValue("@MaChuyenBay", maCB);
+            cmd.Parameters.AddWithValue("@MaKM", string.IsNullOrWhiteSpace(maKM) ? DBNull.Value : maKM.Trim().ToUpper());
+            cmd.Parameters.AddWithValue("@GhiChu", $"Đặt vé {loaiHanhTrinh}");
+            cmd.Parameters.AddWithValue("@LoaiHanhTrinh", loaiHanhTrinh);
+            cmd.Parameters.AddWithValue("@MaDatChoLienKet", (object?)pnrLienKet ?? DBNull.Value);
+
+            var tvp = cmd.Parameters.AddWithValue("@DSVe", dt);
+            tvp.SqlDbType = SqlDbType.Structured;
+            tvp.TypeName = "ChiTietDatVe_Type";
+
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        private async Task InsertAddonServicesAsync(SqlConnection conn, string maDatCho, List<string> serviceIds, string trangThai, string? maGD)
+        {
+            foreach (var maDV in serviceIds)
+            {
+                string sql = @"
+                    INSERT INTO ChiTietDichVuDatVe (MaDatCho, MaDV, SoLuong, DonGia, ThanhTien, TrangThaiThanhToan, MaGiaoDich, NgayThanhToan)
+                    SELECT @MaDatCho, MaDV, 1, DonGia, DonGia, @TT, @GD, CASE WHEN @TT = N'Đã thanh toán' THEN GETDATE() ELSE NULL END
+                    FROM DichVuBoSung WHERE MaDV = @MaDV;";
+                using var cmd = new SqlCommand(sql, conn);
+                cmd.Parameters.AddWithValue("@MaDatCho", maDatCho);
+                cmd.Parameters.AddWithValue("@MaDV", maDV);
+                cmd.Parameters.AddWithValue("@TT", trangThai);
+                cmd.Parameters.AddWithValue("@GD", (object?)maGD ?? DBNull.Value);
+                await cmd.ExecuteNonQueryAsync();
+            }
+        }
+
+        private async Task<Dictionary<string, object>?> GetBookingHeaderDictAsync(SqlConnection conn, string maDatCho)
+        {
+            using var cmd = new SqlCommand("SELECT * FROM vw_LichSuDatVeKhachHang WHERE MaDatCho = @Ma", conn);
+            cmd.Parameters.AddWithValue("@Ma", maDatCho);
+            using var rd = await cmd.ExecuteReaderAsync();
+            if (!await rd.ReadAsync()) return null;
+            var r = new Dictionary<string, object>();
+            for (int i = 0; i < rd.FieldCount; i++) r[rd.GetName(i)] = rd.IsDBNull(i) ? "" : rd.GetValue(i);
+            return r;
+        }
+
+        private async Task CallThanhToanSPAsync(SqlConnection conn, string maHD, string maDatCho, string phuongThuc, string maGD)
+        {
+            using var cmd = new SqlCommand("sp_ThanhToanDonVe", conn);
+            cmd.CommandType = CommandType.StoredProcedure;
+            cmd.Parameters.AddWithValue("@MaHD", maHD);
+            cmd.Parameters.AddWithValue("@MaDatCho", maDatCho);
+            cmd.Parameters.AddWithValue("@MaNV", DBNull.Value);
+            cmd.Parameters.AddWithValue("@PhuongThuc", phuongThuc);
+            cmd.Parameters.AddWithValue("@MaGiaoDich", maGD);
+            await cmd.ExecuteNonQueryAsync();
         }
     }
 }

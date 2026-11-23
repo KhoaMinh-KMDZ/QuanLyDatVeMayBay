@@ -1,105 +1,72 @@
-﻿@using System.Data
-@{
-    ViewData["Title"] = "Thanh toán đơn đặt chỗ";
-    var don = ViewBag.DonDatCho as DataRow;
-    var ves = ViewBag.DanhSachVe as DataTable;
-    decimal tongSauGiam = Convert.ToDecimal(don!["TongTienSauGiam"]);
+﻿@{
+    ViewData["Title"] = "Thanh Toán Online";
+    var donDi = ViewBag.DonDi as Dictionary<string, object>;
+    var donVe = ViewBag.DonVe as Dictionary<string, object>;
+    decimal tongTien = ViewBag.TongThanhToan;
+    DateTime hanTT = Convert.ToDateTime(donDi!["HanThanhToan"]);
 }
 
-<div class="container my-5">
-    @if (TempData["Error"] != null)
-    {
-        <div class="alert alert-danger">@TempData["Error"]</div>
-    }
-
-    <div class="row justify-content-center">
-        <div class="col-lg-8">
-            <div class="card card-modern p-4 p-md-5">
-                <div class="d-flex justify-content-between align-items-center border-bottom pb-3 mb-4">
-                    <div>
-                        <span class="badge bg-warning text-dark mb-1">ĐANG GIỮ CHỖ AN TOÀN</span>
-                        <h4 class="fw-bold mb-0">Mã đặt chỗ (PNR): <span class="text-primary">@don["MaDatCho"]</span></h4>
-                    </div>
-                    <div class="text-end small">
-                        <div class="text-muted">Hạn thanh toán</div>
-                        <div class="fw-bold text-danger">@Convert.ToDateTime(don["HanThanhToan"]).ToString("HH:mm dd/MM/yyyy")</div>
-                    </div>
-                </div>
-
-                <!-- Chi tiết vé giữ chỗ -->
-                <h6 class="fw-bold mb-2">Danh sách vé trong hồ sơ</h6>
-                <div class="table-responsive mb-4">
-                    <table class="table table-sm table-bordered align-middle small">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Mã vé</th>
-                                <th>Hành khách</th>
-                                <th>Chuyến bay</th>
-                                <th>Ghế / Hạng</th>
-                                <th class="text-end">Giá vé</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @if (ves != null)
-                            {
-                                foreach (DataRow v in ves.Rows)
-                                {
-                                    <tr>
-                                        <td class="fw-semibold">@v["MaVe"]</td>
-                                        <td>@v["TenHanhKhach"]</td>
-                                        <td>@v["MaChuyenBay"] (@v["ThanhPhoDi"] → @v["ThanhPhoDen"])</td>
-                                        <td><span class="badge bg-primary">@v["SoGhe"]</span> @v["TenHangGhe"]</td>
-                                        <td class="text-end">@Convert.ToDecimal(v["GiaVe"]).ToString("N0")đ</td>
-                                    </tr>
-                                }
-                            }
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- Bảng tổng tiền -->
-                <div class="bg-light p-3 rounded-3 mb-4">
-                    <div class="d-flex justify-content-between small mb-1">
-                        <span>Tổng tiền vé gốc:</span>
-                        <span>@Convert.ToDecimal(don["TongTienGoc"]).ToString("N0") VNĐ</span>
-                    </div>
-                    <div class="d-flex justify-content-between small text-success mb-2">
-                        <span>Chiết khấu Voucher:</span>
-                        <span>- @Convert.ToDecimal(don["TienGiam"]).ToString("N0") VNĐ</span>
-                    </div>
-                    <div class="d-flex justify-content-between fs-5 fw-bold text-danger border-top pt-2">
-                        <span>TỔNG THANH TOÁN (ĐÃ GỒM VAT):</span>
-                        <span>@tongSauGiam.ToString("N0") VNĐ</span>
-                    </div>
-                </div>
-
-                <!-- Form chọn cổng thanh toán -->
-                <form method="post" asp-action="ConfirmPayment">
-                    <input type="hidden" name="maDatCho" value="@don["MaDatCho"]" />
-
-                    <div class="row g-3 align-items-center">
-                        <div class="col-md-7">
-                            <label class="form-label fw-semibold small">Chọn kênh thanh toán (UC04)</label>
-                            <select name="phuongThuc" class="form-select mb-3">
-                                <option value="Ví MoMo">Ví điện tử MoMo (QR Pay)</option>
-                                <option value="Ví ZaloPay">Ví điện tử ZaloPay</option>
-                                <option value="Thẻ ATM nội địa">Thẻ ATM nội địa / Napas</option>
-                                <option value="VISA/MasterCard">Thẻ quốc tế VISA / MasterCard</option>
-                                <option value="Tiền mặt">Tiền mặt tại quầy đại lý</option>
-                            </select>
-                            <button type="submit" class="btn btn-success btn-lg w-100 rounded-pill fw-semibold">
-                                <i class="bi bi-check-circle-fill me-2"></i>Xác nhận thanh toán & Xuất vé
-                            </button>
-                        </div>
-                        <div class="col-md-5 text-center">
-                            <div class="border rounded-3 p-3 bg-white">
-                                <img src="https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=SKYVN_@don["MaDatCho"]_@tongSauGiam" alt="QR Thanh Toán" class="img-fluid mb-2" />
-                                <div class="small text-muted">Quét mã QR để đối soát giao dịch</div>
-                            </div>
-                        </div>
-                    </div>
-                </form>
+<div class="container py-5" style="max-width: 720px;">
+    <div class="card shadow-lg border-0 rounded-4 overflow-hidden">
+        <div class="card-header bg-dark text-white p-4 d-flex justify-content-between align-items-center">
+            <div>
+                <h5 class="mb-0 fw-bold">THANH TOÁN ĐẶT VÉ TRỰC TUYẾN</h5>
+                <small>Mã đặt chỗ: <strong class="text-warning">@donDi["MaDatCho"]</strong> @(donVe != null ? $" & {donVe["MaDatCho"]} (Khứ hồi)" : "")</small>
             </div>
+            <div class="badge bg-danger fs-6 px-3 py-2" id="countdownBadge">⏳ 15:00</div>
         </div>
+
+        <form method="post" asp-action="ConfirmOnlinePayment" class="card-body p-4">
+            <input type="hidden" name="maDatCho" value="@donDi["MaDatCho"]" />
+            @if (donVe != null)
+            {
+                <input type="hidden" name="maDatChoVe" value="@donVe["MaDatCho"]" />
+            }
+
+            <div class="alert alert-warning small">
+                Nếu quá <strong>15 phút</strong> chưa hoàn tất chuyển khoản, giao dịch sẽ tự động hủy và trả ghế về trạng thái trống cho hành khách khác.
+            </div>
+
+            <div class="p-3 bg-light rounded-3 mb-4 d-flex justify-content-between align-items-center">
+                <span class="fw-bold">Tổng thanh toán (Vé + Dịch vụ):</span>
+                <span class="fs-4 fw-bold text-danger">@tongTien.ToString("N0") VNĐ</span>
+            </div>
+
+            <label class="form-label fw-bold">Chọn hình thức thanh toán Online:</label>
+            <select name="phuongThuc" class="form-select form-select-lg mb-4" id="payMethodSelect" onchange="toggleQR(this.value)">
+                <option value="Chuyển khoản ngân hàng (VietQR)">Chuyển khoản ngân hàng (Quét mã VietQR)</option>
+                <option value="Ví MoMo">Ví điện tử MoMo</option>
+                <option value="Ví ZaloPay">Ví điện tử ZaloPay</option>
+                <option value="Thẻ ATM nội địa">Thẻ ATM nội địa / Internet Banking</option>
+                <option value="VISA/MasterCard">Thẻ quốc tế VISA / MasterCard</option>
+            </select>
+
+            <div id="vietQrBox" class="text-center border rounded-4 p-3 mb-4 bg-white">
+                <p class="fw-bold mb-2">Quét mã VietQR để chuyển khoản nhanh</p>
+                <img src="https://img.vietqr.io/image/MB-0901234567-compact2.png?amount=@((long)tongTien)&addInfo=@donDi["MaDatCho"]" alt="VietQR" style="max-width:220px;" />
+                <div class="small text-muted mt-2">Nội dung CK: <strong>@donDi["MaDatCho"]</strong></div>
+            </div>
+
+            <button type="submit" class="btn btn-success btn-lg w-100 fw-bold">✔ Tôi đã thanh toán chuyển khoản</button>
+        </form>
     </div>
 </div>
+
+<script>
+    function toggleQR(val) {
+        document.getElementById('vietQrBox').style.display = val.includes('VietQR') ? 'block' : 'none';
+    }
+
+    const expireTime = new Date("@hanTT.ToString("yyyy-MM-ddTHH:mm:ss")").getTime();
+    setInterval(() => {
+        const diff = Math.floor((expireTime - Date.now()) / 1000);
+        if (diff <= 0) {
+            alert("Đã hết 15 phút giữ ghế! Giao dịch đã tự động hủy và nhả ghế.");
+            window.location.href = "/Home/Index";
+            return;
+        }
+        const m = String(Math.floor(diff / 60)).padStart(2, '0');
+        const s = String(diff % 60).padStart(2, '0');
+        document.getElementById('countdownBadge').textContent = `⏳ ${m}:${s}`;
+    }, 1000);
+</script>

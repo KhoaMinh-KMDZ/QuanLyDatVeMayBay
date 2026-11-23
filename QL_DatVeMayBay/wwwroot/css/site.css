@@ -1,22 +1,292 @@
-html {
-  font-size: 14px;
-}
+﻿/* =========================================================
+   SKYVN AIRLINES - VIETJET INSPIRED UI & SMOOTH FADE MOTION
+   ========================================================= */
 
-@media (min-width: 768px) {
-  html {
-    font-size: 16px;
-  }
-}
-
-.btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
-  box-shadow: 0 0 0 0.1rem white, 0 0 0 0.25rem #258cfb;
-}
-
-html {
-  position: relative;
-  min-height: 100%;
+:root {
+    --vj-red: #d71920;
+    --vj-red-dark: #b31218;
+    --vj-red-soft: #fff1f2;
+    --vj-yellow: #ffdd00;
+    --vj-yellow-hover: #f5d000;
+    --vj-text-dark: #1f2937;
+    --vj-text-muted: #6b7280;
+    --vj-card-gray: #f8f9fa;
 }
 
 body {
-  margin-bottom: 60px;
+    font-family: 'Be Vietnam Pro', sans-serif;
+    background-color: #ffffff;
+    color: var(--vj-text-dark);
+    overflow-x: hidden;
+}
+
+/* 1. CHUYỂN ĐỘNG FADE MƯỢT MÀ */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translate3d(0, 20px, 0);
+    }
+
+    to {
+        opacity: 1;
+        transform: translate3d(0, 0, 0);
+    }
+}
+
+.animate-fade-up {
+    opacity: 0;
+    animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.delay-1 {
+    animation-delay: 0.08s;
+}
+
+.delay-2 {
+    animation-delay: 0.16s;
+}
+
+.delay-3 {
+    animation-delay: 0.24s;
+}
+
+.reveal-on-scroll {
+    opacity: 0;
+    transform: translateY(18px);
+    transition: opacity 0.55s cubic-bezier(0.16, 1, 0.3, 1), transform 0.55s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+    .reveal-on-scroll.is-visible {
+        opacity: 1;
+        transform: translateY(0);
+    }
+
+/* 2. TOP ANNOUNCEMENT BAR & NAVBAR TRẮNG */
+.vj-top-bar {
+    background-color: var(--vj-red);
+    color: #ffffff;
+    font-size: 0.82rem;
+    font-weight: 500;
+}
+
+.vj-navbar {
+    background-color: #ffffff;
+    box-shadow: 0 2px 15px rgba(0, 0, 0, 0.06);
+}
+
+.vj-logo {
+    color: var(--vj-red) !important;
+    font-weight: 800;
+    font-style: italic;
+    letter-spacing: -0.5px;
+    font-size: 1.55rem;
+}
+
+    .vj-logo span {
+        font-weight: 600;
+        font-size: 1.1rem;
+    }
+
+.vj-nav-link {
+    color: #374151 !important;
+    font-weight: 600;
+    font-size: 0.92rem;
+    padding: 0.5rem 0.85rem !important;
+    transition: color 0.2s ease;
+}
+
+    .vj-nav-link:hover {
+        color: var(--vj-red) !important;
+    }
+
+.btn-vj-yellow {
+    background-color: var(--vj-yellow);
+    color: #111827 !important;
+    font-weight: 700;
+    border: none;
+    transition: all 0.22s ease;
+}
+
+    .btn-vj-yellow:hover {
+        background-color: var(--vj-yellow-hover);
+        transform: translateY(-1px);
+        box-shadow: 0 6px 16px rgba(255, 221, 0, 0.45);
+    }
+
+.btn-vj-red {
+    background-color: var(--vj-red);
+    color: #ffffff !important;
+    font-weight: 600;
+    border: none;
+    transition: all 0.22s ease;
+}
+
+    .btn-vj-red:hover {
+        background-color: var(--vj-red-dark);
+        transform: translateY(-1px);
+        box-shadow: 0 6px 16px rgba(215, 25, 32, 0.3);
+    }
+
+/* 3. HERO BANNER & HỘP TÌM KIẾM 2 TẦNG KIỂU VIETJET */
+.vj-hero {
+    background: linear-gradient(120deg, #b91c1c 0%, #ef4444 45%, #f59e0b 100%);
+    min-height: 280px;
+    position: relative;
+}
+
+.vj-search-wrapper {
+    margin-top: -65px;
+    position: relative;
+    z-index: 20;
+}
+
+.vj-search-tabs {
+    background-color: var(--vj-red);
+    border-top-left-radius: 14px;
+    border-top-right-radius: 14px;
+    padding: 0 1rem;
+}
+
+.vj-tab-item {
+    color: rgba(255, 255, 255, 0.88);
+    font-weight: 600;
+    font-size: 0.9rem;
+    padding: 0.85rem 1.25rem;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    border-bottom: 3px solid transparent;
+    transition: all 0.2s;
+}
+
+    .vj-tab-item:hover {
+        color: #ffffff;
+    }
+
+    .vj-tab-item.active {
+        color: #ffffff;
+        border-bottom: 3px solid var(--vj-yellow);
+        font-weight: 700;
+    }
+
+.vj-search-body {
+    background: #ffffff;
+    border-bottom-left-radius: 14px;
+    border-bottom-right-radius: 14px;
+    box-shadow: 0 12px 35px rgba(0, 0, 0, 0.12);
+    border: 1px solid #f1f5f9;
+    border-top: none;
+}
+
+.vj-input-cell {
+    border-right: 1px solid #e5e7eb;
+    padding: 0.4rem 0.75rem;
+}
+
+@media (max-width: 991px) {
+    .vj-input-cell {
+        border-right: none;
+        border-bottom: 1px solid #e5e7eb;
+    }
+}
+
+.vj-input-label {
+    font-size: 0.74rem;
+    color: var(--vj-text-muted);
+    font-weight: 500;
+    margin-bottom: 2px;
+    display: block;
+}
+
+.vj-clean-select, .vj-clean-input {
+    border: none !important;
+    padding: 0 !important;
+    font-weight: 700 !important;
+    font-size: 0.95rem !important;
+    color: #111827 !important;
+    background-color: transparent !important;
+    box-shadow: none !important;
+}
+
+.btn-swap-vj {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 1px solid #e5e7eb;
+    background: #ffffff;
+    color: #4b5563;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.3s ease, border-color 0.2s;
+}
+
+    .btn-swap-vj:hover {
+        border-color: var(--vj-red);
+        color: var(--vj-red);
+        transform: rotate(180deg);
+    }
+
+/* 4. THẺ CHUYẾN BAY & LƯỚI 8 DỊCH VỤ TIỆN ÍCH */
+.card-modern {
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    background: #ffffff;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+    transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+.flight-card:hover {
+    transform: translateY(-3px);
+    border-color: #fca5a5;
+    box-shadow: 0 12px 28px rgba(215, 25, 32, 0.09);
+}
+
+.vj-service-card {
+    background-color: var(--vj-card-gray);
+    border-radius: 14px;
+    padding: 1.25rem;
+    height: 100%;
+    border: 1px solid transparent;
+    transition: all 0.25s ease;
+    cursor: pointer;
+    text-decoration: none;
+    display: block;
+    color: inherit;
+}
+
+    .vj-service-card:hover {
+        background-color: #ffffff;
+        border-color: #fecdd3;
+        transform: translateY(-4px);
+        box-shadow: 0 12px 24px rgba(0, 0, 0, 0.06);
+    }
+
+.vj-service-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background-color: var(--vj-red-soft);
+    color: var(--vj-red);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.35rem;
+    margin-bottom: 0.85rem;
+}
+
+@media print {
+    .no-print, header, footer {
+        display: none !important;
+    }
+
+    body {
+        background: #fff !important;
+    }
+
+    .card-modern {
+        box-shadow: none !important;
+        border: 1px solid #cbd5e1 !important;
+    }
 }
