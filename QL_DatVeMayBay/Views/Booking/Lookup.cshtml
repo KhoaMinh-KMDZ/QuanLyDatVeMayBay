@@ -1,6 +1,10 @@
-﻿@using System.Data
+@using System.Data
 @{
     ViewData["Title"] = "Tra cứu PNR / Đổi & Hủy vé";
+    bool customer = Context.Session.GetString("UserType") == "KH";
+    int role = Context.Session.GetInt32("RoleID") ?? 0;
+    bool canPay = customer || role is 1 or 2;
+    bool canService = customer || role is 1 or 4;
     var don = ViewBag.DonDatCho as DataRow;
     var ves = ViewBag.DanhSachVe as DataTable;
     var refundMap = ViewBag.RefundPreview as Dictionary<string, DataRow>;
@@ -12,9 +16,9 @@
         <div class="col-md-7">
             <div class="card card-modern p-4">
                 <h4 class="fw-bold mb-2"><i class="bi bi-ticket-perforated-fill text-primary me-2"></i>Quản lý đặt chỗ (Mã PNR)</h4>
-                <p class="text-muted small mb-3">Tra cứu tình trạng thanh toán, xuất hóa đơn VAT, hủy vé hoàn tiền (Luật 72h) hoặc đổi chuyến bay.</p>
+                <p class="text-muted small mb-3">Tra cứu tình trạng thanh toán, xem hóa đơn mẫu, hủy vé hoàn tiền (Luật 72h) hoặc đổi chuyến bay.</p>
                 <form method="get" asp-action="Lookup" class="d-flex gap-2">
-                    <input type="text" name="maDatCho" class="form-control form-control-lg" placeholder="Nhập mã PNR (VD: PNR00001, PNR00004...)" value="@Context.Request.Query["maDatCho"]" required />
+                    <input type="text" name="maDatCho" maxlength="15" aria-label="Mã đặt chỗ" class="form-control form-control-lg" placeholder="Nhập mã PNR (VD: PNR00001, PNR00004...)" value="@Context.Request.Query["maDatCho"]" required />
                     <button type="submit" class="btn btn-sky px-4">Tra cứu</button>
                 </form>
             </div>
@@ -44,16 +48,16 @@
                 </div>
                 <div class="text-end d-flex flex-column align-items-md-end gap-1">
                     <span class="badge bg-info text-dark fs-6">@don["TrangThaiDonHang"]</span>
-                    @if (don["TrangThaiDonHang"].ToString() == "Chờ thanh toán")
+                    @if (canPay && don["TrangThaiDonHang"].ToString() == "Chờ thanh toán" && Convert.ToDateTime(don["HanThanhToan"]) > DateTime.Now)
                     {
                         <a asp-action="Payment" asp-route-maDatCho="@don["MaDatCho"]" class="btn btn-warning btn-sm fw-bold">Thanh toán ngay</a>
                     }
-                    else if (don["MaHD"] != DBNull.Value)
+                    else if (canPay && don["MaHD"] != DBNull.Value)
                     {
                         <div class="d-flex align-items-center gap-2 mt-1">
                             <span class="small text-success">HĐ: <strong>@don["MaHD"]</strong> (@don["PhuongThucThanhToan"])</span>
                             <a asp-action="Invoice" asp-route-maDatCho="@don["MaDatCho"]" class="btn btn-outline-dark btn-sm py-0 px-2">
-                                <i class="bi bi-printer me-1"></i>In Hóa Đơn VAT
+                                <i class="bi bi-printer me-1"></i>In hóa đơn mẫu
                             </a>
                         </div>
                     }
@@ -82,12 +86,12 @@
                             </div>
 
                             <div class="col-md-7 text-md-end">
-                                @if (trangThaiVe == "Đã xuất vé" || trangThaiVe == "Đã đặt chỗ")
+                                @if (trangThaiVe == "Đã xuất vé")
                                 {
                                     @if (refInfo != null)
                                     {
                                         <div class="small text-muted mb-2">
-                                            Thẩm định Luật 72h: Còn <strong>@refInfo["GioConLai"] giờ</strong> trước bay $\rightarrow$ Mức hoàn: <strong class="text-success">@refInfo["PhanTramHoan"]%</strong> (Hoàn <strong>@Convert.ToDecimal(refInfo["SoTienHoan"]).ToString("N0")đ</strong>)
+                                            Thẩm định Luật 72h: Còn <strong>@refInfo["GioConLai"] giờ</strong> trước bay → Mức hoàn: <strong class="text-success">@refInfo["PhanTramHoan"]%</strong> (Hoàn <strong>@Convert.ToDecimal(refInfo["SoTienHoan"]).ToString("N0")đ</strong>)
                                         </div>
                                     }
 
@@ -95,12 +99,18 @@
                                         <a asp-controller="CheckIn" asp-action="Index" asp-route-maDatCho="@don["MaDatCho"]" asp-route-tenHanhKhach="@v["TenHanhKhach"]" class="btn btn-sm btn-outline-success">
                                             <i class="bi bi-qr-code me-1"></i>Check-in
                                         </a>
+                                        @if (canService && ViewBag.AllowDemoPayments == true && Convert.ToDateTime(v["NgayGioBay"]) >= DateTime.Now.AddHours(24))
+                                        {
                                         <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#change_@safeId" onclick="loadSeatsForFlight('flightSelect_@safeId', 'seatSelect_@safeId', 'hangInput_@safeId')">
                                             <i class="bi bi-arrow-left-right me-1"></i>Đổi chuyến
                                         </button>
+                                        }
+                                        @if (canService && Convert.ToDateTime(v["NgayGioBay"]) > DateTime.Now)
+                                        {
                                         <button type="button" class="btn btn-sm btn-outline-danger" data-bs-toggle="collapse" data-bs-target="#cancel_@safeId">
                                             <i class="bi bi-x-circle me-1"></i>Hủy vé
                                         </button>
+                                        }
                                     </div>
 
                                     <!-- Form Hủy vé -->
@@ -110,8 +120,8 @@
                                             <input type="hidden" name="maVe" value="@maVe" />
                                             <label class="form-label small fw-bold text-danger">Xác nhận hủy vé @maVe (Tự động giải phóng ghế trống)</label>
                                             <div class="input-group input-group-sm">
-                                                <input type="text" name="lyDo" class="form-control" placeholder="Nhập lý do hủy vé..." required />
-                                                <button type="submit" class="btn btn-danger">Xác nhận Hủy & Hoàn tiền</button>
+                                                <input type="text" name="lyDo" maxlength="255" aria-label="Lý do hủy vé" class="form-control" placeholder="Nhập lý do hủy vé..." required />
+                                                <button type="submit" class="btn btn-danger">Xác nhận hủy vé</button>
                                             </div>
                                         </form>
                                     </div>
@@ -141,7 +151,7 @@
                                                     </select>
                                                 </div>
                                                 <div class="col-md-2">
-                                                    <button type="submit" class="btn btn-primary btn-sm w-100">Đổi vé</button>
+                                                    <button type="submit" class="btn btn-primary btn-sm w-100">Xác nhận đổi (mô phỏng)</button>
                                                 </div>
                                             </div>
                                         </form>
@@ -153,9 +163,12 @@
                                         <a asp-controller="CheckIn" asp-action="Index" asp-route-maDatCho="@don["MaDatCho"]" asp-route-tenHanhKhach="@v["TenHanhKhach"]" class="btn btn-sm btn-success">
                                             <i class="bi bi-upc-scan me-1"></i>Xem Boarding Pass
                                         </a>
+                                        @if (customer && Convert.ToDateTime(v["NgayGioDenDK"]) <= DateTime.Now)
+                                        {
                                         <button type="button" class="btn btn-sm btn-outline-warning text-dark" data-bs-toggle="collapse" data-bs-target="#review_@safeId">
                                             <i class="bi bi-star-fill text-warning me-1"></i>Đánh giá chuyến bay
                                         </button>
+                                        }
                                     </div>
 
                                     <!-- Form Đánh giá chuyến bay (UC08) -->
@@ -174,7 +187,7 @@
                                                     </select>
                                                 </div>
                                                 <div class="col-md-7">
-                                                    <input type="text" name="binhLuan" class="form-control form-control-sm" placeholder="Chia sẻ trải nghiệm dịch vụ chuyến bay @v["MaChuyenBay"]..." required />
+                                                    <input type="text" name="binhLuan" maxlength="500" aria-label="Nhận xét" class="form-control form-control-sm" placeholder="Chia sẻ trải nghiệm dịch vụ chuyến bay @v["MaChuyenBay"]..." required />
                                                 </div>
                                                 <div class="col-md-2">
                                                     <button type="submit" class="btn btn-warning btn-sm w-100 fw-semibold">Gửi</button>
@@ -194,24 +207,44 @@
 
 @section Scripts {
     <script>
+        const seatRequests = new WeakMap();
+
         async function loadSeatsForFlight(flightSelectId, seatSelectId, hangInputId) {
-            const maCB = document.getElementById(flightSelectId).value;
+            const flight = document.getElementById(flightSelectId).value;
             const seatSelect = document.getElementById(seatSelectId);
-            seatSelect.innerHTML = '<option value="">Đang tải ghế trống...</option>';
+            const submit = seatSelect.form.querySelector('[type=submit]');
+            seatRequests.get(seatSelect)?.abort();
+            seatSelect.disabled = true;
+            submit.disabled = true;
+            seatSelect.replaceChildren(new Option(flight ? 'Đang tải ghế trống...' : 'Chọn chuyến bay', ''));
+            if (!flight) return;
 
-            const res = await fetch(`/Booking/GetAvailableSeats?maChuyenBay=${encodeURIComponent(maCB)}`);
-            const seats = await res.json();
+            const request = new AbortController();
+            seatRequests.set(seatSelect, request);
+            try {
+                const response = await fetch('/Booking/GetAvailableSeats?maChuyenBay=' + encodeURIComponent(flight),
+                    { signal: request.signal });
+                if (!response.ok) throw new Error('Không thể tải ghế.');
+                const seats = await response.json();
+                if (request.signal.aborted) return;
+                if (seats.length === 0) {
+                    seatSelect.replaceChildren(new Option('Hết ghế trống', ''));
+                    return;
+                }
 
-            if (seats.length === 0) {
-                seatSelect.innerHTML = '<option value="">Hết ghế trống</option>';
-                return;
+                seatSelect.replaceChildren(...seats.map(seat => {
+                    const label = `Ghế ${seat.soGhe} - ${seat.tenHangGhe} (${seat.giaThucTe.toLocaleString('vi-VN')}đ)`;
+                    const option = new Option(label, seat.maGhe);
+                    option.dataset.hang = seat.maHangGhe;
+                    return option;
+                }));
+                syncHangGhe(seatSelect, hangInputId);
+                seatSelect.disabled = false;
+                submit.disabled = false;
+            } catch {
+                if (!request.signal.aborted)
+                    seatSelect.replaceChildren(new Option('Không tải được ghế. Chọn lại chuyến bay.', ''));
             }
-
-            seatSelect.innerHTML = seats.map(s =>
-                `<option value="${s.maGhe}" data-hang="${s.maHangGhe}">Ghế ${s.soGhe} - ${s.tenHangGhe} (${s.giaThucTe.toLocaleString('vi-VN')}đ)</option>`
-            ).join('');
-
-            syncHangGhe(seatSelect, hangInputId);
         }
 
         function syncHangGhe(selectEl, hangInputId) {

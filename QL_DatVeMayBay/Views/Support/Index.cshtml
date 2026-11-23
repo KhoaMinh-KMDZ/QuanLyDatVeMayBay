@@ -1,0 +1,83 @@
+@using System.Data
+@model DataTable
+@{
+    bool staff = ViewBag.IsStaff == true;
+    ViewData["Title"] = staff ? "Xử lý khiếu nại" : "Khiếu nại dịch vụ";
+}
+<div class="container my-5">
+    <h1 class="h3 mb-3">@ViewData["Title"]</h1>
+    @if (TempData["Error"] is string error)
+    {
+        <p class="alert alert-warning">@error</p>
+    }
+    @if (TempData["Success"] is string success)
+    {
+        <p class="alert alert-success">@success</p>
+    }
+    @if (!staff)
+    {
+        <form method="post" asp-action="Send" class="card p-3 mb-4">
+            <div class="row g-3">
+                <label class="col-md-8">Tiêu đề <input class="form-control" name="tieuDe" maxlength="120" required /></label>
+                <label class="col-md-4">Phân loại
+                    <select class="form-select" name="phanLoai">
+                        <option>Chuyến bay</option><option>Thanh toán</option><option>Dịch vụ</option>
+                    </select>
+                </label>
+                <label class="col-md-6">Mã đặt chỗ <input class="form-control" name="maDatCho" maxlength="15" /></label>
+                <label class="col-md-6">Mã vé <input class="form-control" name="maVe" maxlength="20" /></label>
+                <label class="col-12">Nội dung <textarea class="form-control" name="noiDung" maxlength="1000" rows="4" required></textarea></label>
+            </div>
+            <div><button class="btn btn-primary mt-3">Gửi khiếu nại</button></div>
+        </form>
+    }
+    @if (Model.Rows.Count == 0)
+    {
+        <p>Chưa có hồ sơ khiếu nại.</p>
+    }
+    @foreach (DataRow item in Model.Rows)
+    {
+        <article class="card p-3 mb-3">
+            <h2 class="h5">#@item["MaKhieuNai"] · @item["TieuDe"]</h2>
+            <p class="small text-muted">@item["PhanLoai"] · @item["TrangThai"] · @(item.Field<DateTime>("NgayGui").ToString("dd/MM/yyyy HH:mm"))</p>
+            @if (staff)
+            {
+                <p>Khách hàng @item["TenKH"] (@item["MaKH"])
+                    @if (item["MaDatCho"] != DBNull.Value)
+                    {
+                        <a asp-controller="Booking" asp-action="Lookup" asp-route-maDatCho="@item["MaDatCho"]">PNR @item["MaDatCho"]</a>
+                    }
+                    @if (item["MaVe"] != DBNull.Value)
+                    {
+                        <span>· Vé @item["MaVe"]</span>
+                    }
+                </p>
+            }
+            <p>@item["NoiDung"]</p>
+            @if (item["PhanHoi"] != DBNull.Value)
+            {
+                <p><strong>Phản hồi</strong> @item["PhanHoi"]</p>
+                @if (item["MaKM"] != DBNull.Value)
+                {
+                    <p>Mã khuyến mãi <strong>@item["MaKM"]</strong></p>
+                }
+            }
+            @if (staff && item.Field<string>("TrangThai") == "Chờ tiếp nhận")
+            {
+                <form method="post" asp-action="Resolve" class="border-top pt-3">
+                    <input type="hidden" name="maKhieuNai" value="@item["MaKhieuNai"]" />
+                    <div class="row g-2">
+                        <label class="col-md-4">Kết quả
+                            <select name="ketQua" class="form-select">
+                                <option>Đã giải quyết</option><option>Từ chối</option>
+                            </select>
+                        </label>
+                        <label class="col-md-4">Mã khuyến mãi hỗ trợ <input class="form-control" name="maKM" maxlength="20" /></label>
+                        <label class="col-12">Phản hồi <textarea class="form-control" name="phanHoi" maxlength="1000" required></textarea></label>
+                    </div>
+                    <button class="btn btn-primary mt-2">Lưu phản hồi</button>
+                </form>
+            }
+        </article>
+    }
+</div>

@@ -1,4 +1,4 @@
-﻿@using System.Data
+@using System.Data
 @model DataTable
 @{
     ViewData["Title"] = "Đặt vé máy bay nội địa Việt Nam";
@@ -70,13 +70,14 @@
                 <div class="col-md-2">
                     <label class="form-label fw-semibold small text-secondary"><i class="bi bi-award me-1"></i>Hạng ghế</label>
                     <select name="maHangGhe" class="form-select form-select-lg fs-6">
+                        <option value="" selected="@(selectedHangGhe.Length == 0)">Tất cả hạng ghế</option>
                         @if (hangGhes != null)
                         {
                             foreach (DataRow hg in hangGhes.Rows)
                             {
                                 string code = hg["MaHangGhe"].ToString()!;
                                 <option value="@code" selected="@(code == selectedHangGhe)">
-                                    @hg["TenHangGhe"] (x@hg["HeSoGia"])
+                                    @hg["TenHangGhe"] (@("×" + Convert.ToDecimal(hg["HeSoGia"]).ToString("0.##")))
                                 </option>
                             }
                         }
@@ -106,10 +107,12 @@
                     </select>
                 </div>
                 <div class="col-md-3">
-                    <input type="number" name="giaMax" class="form-control form-control-sm" placeholder="Giá cơ bản tối đa (VNĐ)..." value="@ViewBag.SelectedGiaMax" step="100000" />
+                    <input type="number" name="giaMax" class="form-control form-control-sm" placeholder="Giá vé tối đa (VNĐ)..." value="@ViewBag.SelectedGiaMax" step="1000" min="0" />
                 </div>
-                <div class="col-md-6 text-md-end small text-muted">
-                    Gợi ý dữ liệu mẫu: <strong>SGN → HAN (01/09/2026)</strong>, <strong>SGN → DAD (01/09/2026)</strong>, <strong>HPH → VCS (05/09/2026 - Quá cảnh)</strong>
+                <div class="col-md-3">
+                    <label for="soHanhKhach" class="form-label small mb-0">Số hành khách</label>
+                    <input type="number" id="soHanhKhach" name="soHanhKhach" class="form-control form-control-sm"
+                           min="1" value="@ViewBag.SoHanhKhach" required />
                 </div>
             </div>
         </form>
@@ -118,6 +121,10 @@
 
 <!-- Danh sách Kết quả Chuyến bay -->
 <div class="container my-5">
+    @if (ViewBag.SearchError != null)
+    {
+        <div class="alert alert-warning">@ViewBag.SearchError</div>
+    }
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h4 class="fw-bold mb-0">
             @if (ViewBag.DaTimKiem == true)
@@ -136,7 +143,24 @@
         <div class="card card-modern p-5 text-center">
             <i class="bi bi-calendar-x display-4 text-muted mb-3"></i>
             <h5 class="fw-bold">Không tìm thấy chuyến bay phù hợp</h5>
-            <p class="text-muted">Vui lòng thử chọn ngày bay khác (ví dụ: 01/09/2026 đến 06/09/2026) hoặc bỏ bớt bộ lọc giá.</p>
+            @if (ViewBag.NgayGoiY is DateTime[] { Length: > 0 } suggestedDates)
+            {
+                <p class="text-muted">Có chuyến phù hợp vào các ngày lân cận:</p>
+                <div class="d-flex flex-wrap justify-content-center gap-2">
+                    @foreach (DateTime date in suggestedDates)
+                    {
+                        <a class="btn btn-outline-primary" asp-action="Index"
+                           asp-route-maSanBayDi="@ViewBag.SelectedDi" asp-route-maSanBayDen="@ViewBag.SelectedDen"
+                           asp-route-ngayBay="@date.ToString("yyyy-MM-dd")" asp-route-maHangGhe="@selectedHangGhe"
+                           asp-route-maHang="@ViewBag.SelectedHang" asp-route-giaMax="@ViewBag.SelectedGiaMax"
+                           asp-route-soHanhKhach="@ViewBag.SoHanhKhach">@date.ToString("dd/MM/yyyy")</a>
+                    }
+                </div>
+            }
+            else
+            {
+                <p class="text-muted mb-0">Thử chọn ngày khác hoặc điều chỉnh bộ lọc.</p>
+            }
         </div>
     }
     else
@@ -150,7 +174,8 @@
                 decimal giaCoBan = Convert.ToDecimal(row["GiaVeCoBan"]);
 
                 // Kiểm tra điểm dừng quá cảnh
-                DataRow[] transits = diemDungs?.Select($"MaChuyenBay = '{maCB}'") ?? Array.Empty<DataRow>();
+                DataRow[] transits = diemDungs?.AsEnumerable()
+                    .Where(stop => stop.Field<string>("MaChuyenBay") == maCB).ToArray() ?? Array.Empty<DataRow>();
 
                 <div class="col-12">
                     <div class="card card-modern p-4">
@@ -198,7 +223,7 @@
 
                             <!-- Giá vé & Nút đặt -->
                             <div class="col-md-4 text-md-end border-start-md ps-md-4">
-                                <div class="small text-muted">Giá vé cơ bản từ</div>
+                                <div class="small text-muted">@(ViewBag.DaTimKiem == true && selectedHangGhe.Length > 0 ? "Giá theo hạng đã chọn" : "Giá vé từ")</div>
                                 <div class="fs-4 fw-bold text-danger mb-1">@giaCoBan.ToString("N0") VNĐ</div>
                                 <div class="small text-success mb-3">
                                     <i class="bi bi-person-check-fill me-1"></i>Còn <strong>@row["SoGheTrong"]</strong> ghế trống

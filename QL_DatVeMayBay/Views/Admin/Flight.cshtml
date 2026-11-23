@@ -1,0 +1,119 @@
+@using System.Data
+@model QL_DatVeMayBay.Models.FlightForm
+@{
+    ViewData["Title"] = Model.Update ? $"Chỉnh lịch {Model.MaChuyenBay}" : "Thêm lịch bay";
+    var airports = ((DataTable)ViewBag.Airports).Rows;
+    bool canEdit = ViewBag.CanEdit == true;
+}
+<div class="container my-5">
+    <h1 class="h3">@ViewData["Title"]</h1>
+    @if (!canEdit)
+    {
+        <p class="alert alert-warning">Chỉ điều chỉnh được chuyến chưa khởi hành và chưa có hồ sơ vé.</p>
+    }
+    <form method="post" asp-action="Flight" class="card p-4 mt-3">
+        <div asp-validation-summary="All" class="text-danger"></div>
+        <input asp-for="Update" type="hidden" />
+        <fieldset disabled="@(!canEdit)">
+            <div class="row g-3">
+                <label class="col-md-4">Mã chuyến <input asp-for="MaChuyenBay" readonly="@Model.Update" class="form-control" /></label>
+                <label class="col-md-4">Tuyến bay
+                    <select asp-for="MaTuyenBay" class="form-select">
+                        <option value="">Chọn tuyến</option>
+                        @foreach (DataRow row in ((DataTable)ViewBag.Routes).Rows)
+                        {
+                            <option value="@row["MaTuyenBay"]">@row["MaTuyenBay"]</option>
+                        }
+                    </select>
+                </label>
+                <label class="col-md-4">Tàu bay
+                    <select asp-for="MaMayBay" class="form-select">
+                        <option value="">Chọn tàu bay</option>
+                        @foreach (DataRow row in ((DataTable)ViewBag.Aircraft).Rows)
+                        {
+                            <option value="@row["MaMayBay"]">@row["MaMayBay"] · @row["TenMayBay"]</option>
+                        }
+                    </select>
+                </label>
+                <label class="col-md-4">Giờ khởi hành <input asp-for="NgayGioBay" asp-format="{0:yyyy-MM-ddTHH:mm}" type="datetime-local" class="form-control" /></label>
+                <label class="col-md-4">Giờ đến dự kiến <input asp-for="NgayGioDenDK" asp-format="{0:yyyy-MM-ddTHH:mm}" type="datetime-local" class="form-control" /></label>
+                <label class="col-md-4">Giá cơ sở (VNĐ) <input asp-for="GiaVeCoBan" type="number" min="1000" step="1" class="form-control" /></label>
+                <label class="col-md-4">Trạng thái
+                    <select asp-for="TrangThai" class="form-select">
+                        <option>Đang mở bán</option>
+                        <option>Hoãn chuyến</option>
+                        <option>Đã hủy</option>
+                    </select>
+                </label>
+            </div>
+            <h2 class="h5 mt-4">Điểm quá cảnh</h2>
+            <div id="flightStops">
+                @for (int index = 0; index < Model.Stops.Count; index++)
+                {
+                    <div class="row g-2 align-items-end mb-2" data-stop>
+                        <label class="col-md-4">Sân bay
+                            <select asp-for="Stops[index].MaSanBayTG" class="form-select">
+                                <option value="">Chọn sân bay</option>
+                                @foreach (DataRow airport in airports)
+                                {
+                                    <option value="@airport["MaSanBay"]">@airport["MaSanBay"] · @airport["TenSanBay"]</option>
+                                }
+                            </select>
+                        </label>
+                        <label class="col-md-2">Phút dừng <input asp-for="Stops[index].ThoiGianDung" type="number" min="45" max="120" class="form-control" /></label>
+                        <label class="col-md-4">Ghi chú <input asp-for="Stops[index].GhiChu" class="form-control" /></label>
+                        <div class="col-md-2"><button class="btn btn-outline-danger" type="button" data-remove-stop>Bỏ điểm này</button></div>
+                    </div>
+                }
+            </div>
+            <button id="addFlightStop" class="btn btn-outline-primary mt-2" type="button">Thêm điểm quá cảnh</button>
+        </fieldset>
+        <div class="d-flex gap-2 mt-4">
+            @if (canEdit)
+            {
+                <button class="btn btn-primary" type="submit">Lưu lịch bay</button>
+            }
+            <a class="btn btn-outline-secondary" asp-action="Dashboard" asp-fragment="tab-flights">Quay lại</a>
+        </div>
+    </form>
+</div>
+<template id="flightStopTemplate">
+    <div class="row g-2 align-items-end mb-2" data-stop>
+        <label class="col-md-4">Sân bay
+            <select name="Stops[0].MaSanBayTG" required class="form-select">
+                <option value="">Chọn sân bay</option>
+                @foreach (DataRow airport in airports)
+                {
+                    <option value="@airport["MaSanBay"]">@airport["MaSanBay"] · @airport["TenSanBay"]</option>
+                }
+            </select>
+        </label>
+        <label class="col-md-2">Phút dừng <input name="Stops[0].ThoiGianDung" type="number" min="45" max="120" required class="form-control" /></label>
+        <label class="col-md-4">Ghi chú <input name="Stops[0].GhiChu" maxlength="200" class="form-control" /></label>
+        <div class="col-md-2"><button class="btn btn-outline-danger" type="button" data-remove-stop>Bỏ điểm này</button></div>
+    </div>
+</template>
+
+@section Scripts {
+    <script>
+        const list = document.getElementById('flightStops');
+        const template = document.getElementById('flightStopTemplate');
+        function numberStops() {
+            [...list.children].forEach((row, index) => {
+                row.querySelectorAll('[name]').forEach(input => {
+                    input.name = input.name.replace(/\[\d+\]/, '[' + index + ']');
+                });
+            });
+        }
+        document.getElementById('addFlightStop').addEventListener('click', () => {
+            list.append(template.content.cloneNode(true));
+            numberStops();
+        });
+        list.addEventListener('click', event => {
+            if (event.target.matches('[data-remove-stop]')) {
+                event.target.closest('[data-stop]').remove();
+                numberStops();
+            }
+        });
+    </script>
+}

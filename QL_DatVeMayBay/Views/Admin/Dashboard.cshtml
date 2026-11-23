@@ -1,4 +1,4 @@
-﻿@using System.Data
+@using System.Data
 @using System.Text.Json
 @{
     ViewData["Title"] = "Trung tâm Điều hành & Thống kê Đại lý";
@@ -46,11 +46,14 @@
             <span class="badge bg-warning text-dark mb-1">PHÂN QUYỀN RBAC: @roleName.ToUpper()</span>
             <h3 class="fw-bold mb-0">Trung tâm Điều hành & Thống kê Đại lý</h3>
         </div>
+        @if (roleId == 1)
+        {
         <form method="post" asp-action="RunCleanupCursor">
             <button type="submit" class="btn btn-outline-danger btn-sm rounded-pill">
                 <i class="bi bi-arrow-repeat me-1"></i>Quét hủy đơn quá hạn (SQL Cursor)
             </button>
         </form>
+        }
     </div>
 
     @if (TempData["Success"] != null)
@@ -62,6 +65,8 @@
         <div class="alert alert-danger">@TempData["Error"]</div>
     }
 
+    @if (roleId is 1 or 2)
+    {
     <!-- 4 THẺ KPI TỔNG QUAN -->
     <div class="row g-3 mb-4">
         <div class="col-md-3">
@@ -90,14 +95,34 @@
         </div>
     </div>
 
+    }
+
     <!-- TAB ĐIỀU HƯỚNG NGHIỆP VỤ -->
     <ul class="nav nav-pills mb-4 gap-2" role="tablist">
-        <li class="nav-item"><button class="nav-link active" data-bs-toggle="pill" data-bs-target="#tab-report">1. Biểu đồ & Báo cáo (UC09)</button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-orders">2. Đơn đặt chỗ & Thu ngân (UC03/04)</button></li>
+        @if (roleId is 1 or 2)
+        {
+        <li class="nav-item"><button class="nav-link @(roleId is 1 or 2 ? "active" : "")" data-bs-toggle="pill" data-bs-target="#tab-report">1. Biểu đồ & Báo cáo (UC09)</button></li>
+        }
+        @if (roleId is 1 or 2 or 3 or 4)
+        {
+        <li class="nav-item"><button class="nav-link @(roleId is 3 or 4 ? "active" : "")" data-bs-toggle="pill" data-bs-target="#tab-orders">Đơn đặt chỗ</button></li>
+        }
+        @if (roleId is 1 or 4)
+        {
         <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-refunds">3. Hoàn / Đổi vé (UC05/06)</button></li>
+        }
+        @if (roleId is 1)
+        {
         <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-flights">4. Lịch bay (UC12)</button></li>
+        }
+        @if (roleId is 1)
+        {
         <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-promos">5. Khuyến mãi (UC13)</button></li>
+        }
+        @if (roleId is 1 or 4)
+        {
         <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-reviews">6. Đánh giá (UC08)</button></li>
+        }
         @if (roleId == 1)
         {
             <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-staff">7. Nhân sự (UC14)</button></li>
@@ -105,6 +130,8 @@
     </ul>
 
     <div class="tab-content">
+        @if (roleId is 1 or 2)
+        {
         <!-- TAB 1: BIỂU ĐỒ & BÁO CÁO -->
         <div class="tab-pane fade show active" id="tab-report">
             <div class="row g-4 mb-4">
@@ -177,9 +204,12 @@
                 </div>
             </div>
         </div>
+        }
 
+        @if (roleId is 1 or 2 or 3 or 4)
+        {
         <!-- TAB 2: ĐƠN ĐẶT CHỖ -->
-        <div class="tab-pane fade" id="tab-orders">
+        <div class="tab-pane fade @(roleId is 3 or 4 ? "show active" : "")" id="tab-orders">
             <div class="card card-modern p-4">
                 <h5 class="fw-bold mb-3">Danh sách Hồ sơ Đặt chỗ & Hóa đơn</h5>
                 <div class="table-responsive">
@@ -200,7 +230,7 @@
                                         <td>@(r["MaHD"] == DBNull.Value ? "-" : $"{r["MaHD"]} ({r["PhuongThucThanhToan"]})")</td>
                                         <td>
                                             <a asp-controller="Booking" asp-action="Lookup" asp-route-maDatCho="@r["MaDatCho"]" class="btn btn-sm btn-outline-primary">Xử lý</a>
-                                            @if (r["MaHD"] != DBNull.Value)
+                                            @if ((roleId is 1 or 2) && r["MaHD"] != DBNull.Value)
                                             {
                                                 <a asp-controller="Booking" asp-action="Invoice" asp-route-maDatCho="@r["MaDatCho"]" class="btn btn-sm btn-outline-dark">In HĐ</a>
                                             }
@@ -213,7 +243,10 @@
                 </div>
             </div>
         </div>
+        }
 
+        @if (roleId is 1 or 4)
+        {
         <!-- TAB 3: HOÀN / ĐỔI VÉ -->
         <div class="tab-pane fade" id="tab-refunds">
             <div class="card card-modern p-4">
@@ -245,13 +278,17 @@
                 </div>
             </div>
         </div>
+        }
 
+        @if (roleId is 1)
+        {
         <!-- TAB 4: QUẢN LÝ LỊCH BAY -->
         <div class="tab-pane fade" id="tab-flights">
             @if (roleId == 1)
             {
                 <div class="card card-modern p-4 mb-4">
                     <h6 class="fw-bold text-primary mb-3"><i class="bi bi-plus-circle-fill me-1"></i>Mở lịch chuyến bay mới</h6>
+                    <p><a asp-action="Flight">Thêm lịch có điểm quá cảnh</a></p>
                     <form method="post" asp-action="AddFlight" class="row g-2 align-items-end">
                         <div class="col-md-2"><label class="form-label small">Mã chuyến</label><input type="text" name="maChuyenBay" class="form-control form-control-sm" placeholder="VN999" required /></div>
                         <div class="col-md-2"><label class="form-label small">Tuyến bay</label><select name="maTuyenBay" class="form-select form-select-sm">@if (tuyens != null) { foreach (DataRow t in tuyens.Rows) {
@@ -262,8 +299,8 @@
                     <option value="@m["MaMayBay"]">@m["MaMayBay"] (@m["MaHang"])</option>
                                         } }
 </select></div>
-                    <div class="col-md-2"><label class="form-label small">Giờ cất cánh</label><input type="datetime-local" name="ngayGioBay" class="form-control form-control-sm" value="2027-01-10T08:00" required /></div>
-                    <div class="col-md-2"><label class="form-label small">Giờ hạ cánh</label><input type="datetime-local" name="ngayGioDenDK" class="form-control form-control-sm" value="2027-01-10T10:15" required /></div>
+                    <div class="col-md-2"><label class="form-label small">Giờ cất cánh</label><input type="datetime-local" name="ngayGioBay" class="form-control form-control-sm" value="@DateTime.Today.AddDays(1).AddHours(8).ToString("yyyy-MM-ddTHH:mm")" required /></div>
+                    <div class="col-md-2"><label class="form-label small">Giờ hạ cánh</label><input type="datetime-local" name="ngayGioDenDK" class="form-control form-control-sm" value="@DateTime.Today.AddDays(1).AddHours(10).AddMinutes(15).ToString("yyyy-MM-ddTHH:mm")" required /></div>
                     <div class="col-md-2"><label class="form-label small">Giá cơ bản</label><div class="input-group input-group-sm"><input type="number" name="giaVeCoBan" class="form-control" value="1350000" step="50000" required /><button type="submit" class="btn btn-primary">Thêm</button></div></div>
                 </form>
             </div>
@@ -274,7 +311,7 @@
                 <div class="table-responsive">
                     <table class="table table-hover align-middle small">
                         <thead class="table-light">
-                            <tr><th>Mã CB</th><th>Hãng</th><th>Hành trình</th><th>Giờ bay</th><th>Giá cơ bản</th><th>Ghế trống</th><th>Trạng thái</th></tr>
+                            <tr><th>Mã CB</th><th>Hãng</th><th>Hành trình</th><th>Giờ bay</th><th>Giá cơ bản</th><th>Ghế trống</th><th>Trạng thái</th><th>Thao tác</th></tr>
                         </thead>
                         <tbody>
                             @if (dtCB != null)
@@ -289,6 +326,7 @@
                                         <td class="fw-bold text-danger">@Convert.ToDecimal(r["GiaVeCoBan"]).ToString("N0")đ</td>
                                         <td>@r["SoGheTrong"] / @r["TongSoGhe"]</td>
                                         <td><span class="badge bg-success">@r["TrangThaiChuyenBay"]</span></td>
+                                        <td><a asp-action="Flight" asp-route-id="@r["MaChuyenBay"]">Sửa lịch</a></td>
                                     </tr>
                                 }
                             }
@@ -297,12 +335,37 @@
                 </div>
             </div>
         </div>
+        }
 
+        @if (roleId is 1)
+        {
         <!-- TAB 5: KHUYẾN MÃI (UC13) -->
         <div class="tab-pane fade" id="tab-promos">
             @if (roleId == 1)
             {
                 <div class="card card-modern p-4 mb-4">
+                <h5 class="fw-bold">Giá vé và hệ số hạng ghế</h5>
+                <div class="row g-3">
+                    <form method="post" asp-action="UpdateFare" class="col-md-6">
+                        <label class="form-label w-100">Mã chuyến bay <input class="form-control" name="maChuyenBay" maxlength="20" required /></label>
+                        <label class="form-label w-100">Giá vé cơ sở (VNĐ) <input class="form-control" type="number" name="giaVeCoBan" min="1000" max="999999999" required /></label>
+                        <button class="btn btn-outline-primary">Cập nhật giá chuyến</button>
+                    </form>
+                    <form method="post" asp-action="UpdateFare" class="col-md-6">
+                        <label class="form-label w-100">Hạng ghế
+                            <select class="form-select" name="maHangGhe" required>
+                                @foreach (DataRow hang in ((DataTable)ViewBag.HangGhes).Rows)
+                                {
+                                    <option value="@hang["MaHangGhe"]">@hang["TenHangGhe"] · x@hang["HeSoGia"]</option>
+                                }
+                            </select>
+                        </label>
+                        <label class="form-label w-100">Hệ số giá mới <input class="form-control" type="number" name="heSoGia" min="1" max="99.99" step="0.01" required /></label>
+                        <button class="btn btn-outline-primary">Cập nhật hệ số</button>
+                    </form>
+                </div>
+            </div>
+            <div class="card card-modern p-4 mb-4">
                     <h6 class="fw-bold text-primary mb-3"><i class="bi bi-ticket-detailed-fill me-1"></i>Phát hành Voucher Khuyến mãi mới</h6>
                     <form method="post" asp-action="AddPromo" class="row g-2 align-items-end">
                         <div class="col-md-2"><label class="form-label small">Mã KM</label><input type="text" name="maKM" class="form-control form-control-sm" placeholder="TET2027" required /></div>
@@ -311,7 +374,15 @@
                         <div class="col-md-2"><label class="form-label small">Giảm tối đa</label><input type="number" name="giamToiDa" class="form-control form-control-sm" value="300000" required /></div>
                         <div class="col-md-2"><label class="form-label small">Đơn tối thiểu</label><input type="number" name="donHangToiThieu" class="form-control form-control-sm" value="1000000" required /></div>
                         <div class="col-md-1"><label class="form-label small">SL</label><input type="number" name="soLuong" class="form-control form-control-sm" value="50" required /></div>
-                        <div class="col-md-1"><input type="hidden" name="ngayKetThuc" value="2027-06-01" /><button type="submit" class="btn btn-primary btn-sm w-100">Tạo</button></div>
+                        <div class="col-md-3">
+                            <label class="form-label small">Ngày bắt đầu</label>
+                            <input type="date" name="ngayBatDau" value="@DateTime.Today.ToString("yyyy-MM-dd")" class="form-control form-control-sm" required />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label small">Ngày kết thúc</label>
+                            <input type="date" name="ngayKetThuc" value="@DateTime.Today.AddDays(30).ToString("yyyy-MM-dd")" class="form-control form-control-sm" required />
+                        </div>
+                        <div class="col-md-2"><button type="submit" class="btn btn-primary btn-sm w-100">Tạo voucher</button></div>
                     </form>
                 </div>
             }
@@ -336,6 +407,7 @@
                                     <td>@r["SoLuong"]</td>
                                     <td><span class="badge @(active ? "bg-success" : "bg-secondary")">@(active ? "Đang chạy" : "Tạm khóa")</span></td>
                                     <td>
+                                        <a class="btn btn-sm btn-outline-primary" asp-action="Promotion" asp-route-id="@r["MaKM"]">Sửa</a>
                                         <form method="post" asp-action="TogglePromo">
                                             <input type="hidden" name="maKM" value="@r["MaKM"]" />
                                             <button type="submit" class="btn btn-sm btn-outline-secondary">Bật / Tắt</button>
@@ -348,7 +420,10 @@
                 </table>
             </div>
         </div>
+        }
 
+        @if (roleId is 1 or 4)
+        {
         <!-- TAB 6: ĐÁNH GIÁ CHUYẾN BAY (UC08) -->
         <div class="tab-pane fade" id="tab-reviews">
             <div class="card card-modern p-4">
@@ -367,7 +442,7 @@
                                     <td class="fw-bold">@r["TenKH"]</td>
                                     <td><span class="badge bg-primary">@r["MaChuyenBay"]</span></td>
                                     <td class="text-warning">@(new string('★', stars))</td>
-                                    <td>@r["BinhLuan"]</td>
+                                    <td>@r["NoiDung"]</td>
                                     <td>@Convert.ToDateTime(r["NgayDanhGia"]).ToString("dd/MM/yyyy HH:mm")</td>
                                 </tr>
                             }
@@ -376,13 +451,17 @@
                 </table>
             </div>
         </div>
+        }
 
         <!-- TAB 7: NHÂN SỰ (CHỈ ADMIN) -->
         @if (roleId == 1)
         {
             <div class="tab-pane fade" id="tab-staff">
                 <div class="card card-modern p-4">
-                    <h5 class="fw-bold mb-3">Danh sách Nhân sự & Phân quyền RBAC</h5>
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fw-bold mb-0">Danh sách Nhân sự & Phân quyền RBAC</h5>
+                        <a class="btn btn-primary btn-sm" asp-action="Staff">Thêm nhân viên</a>
+                    </div>
                     <table class="table table-hover align-middle small">
                         <thead class="table-light">
                             <tr><th>Mã NV</th><th>Họ tên</th><th>Tài khoản</th><th>Chức vụ</th><th>Vai trò</th><th>Trạng thái</th><th>Thao tác</th></tr>
@@ -401,7 +480,8 @@
                                         <td><span class="badge bg-primary">@r["TenRole"]</span></td>
                                         <td><span class="badge @(active ? "bg-success" : "bg-danger")">@(active ? "Hoạt động" : "Đã khóa")</span></td>
                                         <td>
-                                            @if (r["MaNV"].ToString() != "NV01")
+                                            <a class="btn btn-sm btn-outline-primary" asp-action="Staff" asp-route-id="@r["MaNV"]">Sửa</a>
+                                            @if (r["MaNV"].ToString() != Context.Session.GetString("UserId"))
                                             {
                                                 <form method="post" asp-action="ToggleStaff">
                                                     <input type="hidden" name="maNV" value="@r["MaNV"]" />
@@ -422,11 +502,19 @@
 
 @section Scripts {
     <script>
+        const matchingTab = [...document.querySelectorAll('[data-bs-toggle="pill"]')]
+            .find(button => button.dataset.bsTarget === location.hash);
+        if (matchingTab && typeof bootstrap !== 'undefined')
+            bootstrap.Tab.getOrCreateInstance(matchingTab).show();
+
         const hangLabels = @Html.Raw(JsonSerializer.Serialize(hangLabels));
         const hangRevenues = @Html.Raw(JsonSerializer.Serialize(hangRevenues));
         const tuyenLabels = @Html.Raw(JsonSerializer.Serialize(tuyenLabels));
         const tuyenRevenues = @Html.Raw(JsonSerializer.Serialize(tuyenRevenues));
 
+        if (typeof Chart === 'undefined' || !document.getElementById('airlineChart')) {
+            document.querySelectorAll('.chart-offline').forEach(item => item.hidden = false);
+        } else {
         new Chart(document.getElementById('airlineChart'), {
             type: 'doughnut',
             data: {
@@ -455,5 +543,6 @@
                 plugins: { legend: { display: false } }
             }
         });
+        }
     </script>
 }

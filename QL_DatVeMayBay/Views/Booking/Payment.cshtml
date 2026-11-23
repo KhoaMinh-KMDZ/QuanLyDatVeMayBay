@@ -1,8 +1,11 @@
-﻿@using System.Data
+@using System.Data
 @{
     ViewData["Title"] = "Thanh toán đơn đặt chỗ";
     var don = ViewBag.DonDatCho as DataRow;
     var ves = ViewBag.DanhSachVe as DataTable;
+    var vouchers = (DataTable)ViewBag.Vouchers;
+    bool allowDemo = ViewBag.AllowDemoPayments == true;
+    bool allowCash = Context.Session.GetInt32("RoleID") is 1 or 2;
     decimal tongSauGiam = Convert.ToDecimal(don!["TongTienSauGiam"]);
 }
 
@@ -10,6 +13,11 @@
     @if (TempData["Error"] != null)
     {
         <div class="alert alert-danger">@TempData["Error"]</div>
+    }
+
+    @if (TempData["Success"] != null)
+    {
+        <div class="alert alert-success">@TempData["Success"]</div>
     }
 
     <div class="row justify-content-center">
@@ -21,7 +29,9 @@
                         <h4 class="fw-bold mb-0">Mã đặt chỗ (PNR): <span class="text-primary">@don["MaDatCho"]</span></h4>
                     </div>
                     <div class="text-end small">
-                        <div class="text-muted">Hạn thanh toán</div>
+                        <div class="text-muted">Hạn giữ chỗ</div>
+                        <div id="holdCountdown" class="fs-4 fw-bold text-danger"
+                             data-seconds="@don["SoGiayGiuCho"]" role="timer"></div>
                         <div class="fw-bold text-danger">@Convert.ToDateTime(don["HanThanhToan"]).ToString("HH:mm dd/MM/yyyy")</div>
                     </div>
                 </div>
@@ -49,7 +59,7 @@
                                         <td>@v["TenHanhKhach"]</td>
                                         <td>@v["MaChuyenBay"] (@v["ThanhPhoDi"] → @v["ThanhPhoDen"])</td>
                                         <td><span class="badge bg-primary">@v["SoGhe"]</span> @v["TenHangGhe"]</td>
-                                        <td class="text-end">@Convert.ToDecimal(v["GiaVe"]).ToString("N0")đ</td>
+                                        <td class="text-end">@((Convert.ToDecimal(v["GiaVe"]) + Convert.ToDecimal(v["PhiPhuTro"])).ToString("N0"))đ</td>
                                     </tr>
                                 }
                             }
@@ -57,10 +67,30 @@
                     </table>
                 </div>
 
+                <form method="post" asp-action="ApplyVoucher" class="mb-3" data-hold-action>
+                    <input type="hidden" name="maDatCho" value="@don["MaDatCho"]" />
+                    <label for="maKM" class="form-label">Voucher
+                        @if (don["MaKM"] != DBNull.Value)
+                        {
+                            <span class="text-success">đang áp dụng @don["MaKM"]</span>
+                        }
+                    </label>
+                    <div class="input-group">
+                        <input id="maKM" name="maKM" maxlength="20" list="voucherOptions" class="form-control" placeholder="Nhập mã hoặc để trống để bỏ mã" />
+                        <button class="btn btn-outline-primary">Cập nhật voucher</button>
+                    </div>
+                    <datalist id="voucherOptions">
+                        @foreach (DataRow voucher in vouchers.Rows)
+                        {
+                            <option value="@voucher["MaKM"]">@voucher["TenKM"]</option>
+                        }
+                    </datalist>
+                </form>
+
                 <!-- Bảng tổng tiền -->
                 <div class="bg-light p-3 rounded-3 mb-4">
                     <div class="d-flex justify-content-between small mb-1">
-                        <span>Tổng tiền vé gốc:</span>
+                        <span>Tiền vé và phụ phí:</span>
                         <span>@Convert.ToDecimal(don["TongTienGoc"]).ToString("N0") VNĐ</span>
                     </div>
                     <div class="d-flex justify-content-between small text-success mb-2">
@@ -68,38 +98,57 @@
                         <span>- @Convert.ToDecimal(don["TienGiam"]).ToString("N0") VNĐ</span>
                     </div>
                     <div class="d-flex justify-content-between fs-5 fw-bold text-danger border-top pt-2">
-                        <span>TỔNG THANH TOÁN (ĐÃ GỒM VAT):</span>
+                        <span>TỔNG THANH TOÁN:</span>
                         <span>@tongSauGiam.ToString("N0") VNĐ</span>
                     </div>
                 </div>
 
-                <!-- Form chọn cổng thanh toán -->
-                <form method="post" asp-action="ConfirmPayment">
-                    <input type="hidden" name="maDatCho" value="@don["MaDatCho"]" />
-
-                    <div class="row g-3 align-items-center">
-                        <div class="col-md-7">
-                            <label class="form-label fw-semibold small">Chọn kênh thanh toán (UC04)</label>
-                            <select name="phuongThuc" class="form-select mb-3">
-                                <option value="Ví MoMo">Ví điện tử MoMo (QR Pay)</option>
-                                <option value="Ví ZaloPay">Ví điện tử ZaloPay</option>
-                                <option value="Thẻ ATM nội địa">Thẻ ATM nội địa / Napas</option>
-                                <option value="VISA/MasterCard">Thẻ quốc tế VISA / MasterCard</option>
-                                <option value="Tiền mặt">Tiền mặt tại quầy đại lý</option>
-                            </select>
-                            <button type="submit" class="btn btn-success btn-lg w-100 rounded-pill fw-semibold">
-                                <i class="bi bi-check-circle-fill me-2"></i>Xác nhận thanh toán & Xuất vé
-                            </button>
-                        </div>
-                        <div class="col-md-5 text-center">
-                            <div class="border rounded-3 p-3 bg-white">
-                                <img src="https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=SKYVN_@don["MaDatCho"]_@tongSauGiam" alt="QR Thanh Toán" class="img-fluid mb-2" />
-                                <div class="small text-muted">Quét mã QR để đối soát giao dịch</div>
-                            </div>
-                        </div>
-                    </div>
-                </form>
+                @if (allowDemo || allowCash)
+                {
+                    <form method="post" asp-action="ConfirmPayment" data-hold-action>
+                        <input type="hidden" name="maDatCho" value="@don["MaDatCho"]" />
+                        <label for="phuongThuc" class="form-label fw-semibold">Phương thức thanh toán</label>
+                        <select id="phuongThuc" name="phuongThuc" class="form-select mb-3">
+                            @if (allowCash)
+                            {
+                                <option value="Tiền mặt">Tiền mặt tại quầy</option>
+                            }
+                            @if (allowDemo)
+                            {
+                                <option value="Ví MoMo">MoMo (mô phỏng)</option>
+                                <option value="Ví ZaloPay">ZaloPay (mô phỏng)</option>
+                                <option value="Thẻ ATM nội địa">Thẻ ATM nội địa (mô phỏng)</option>
+                                <option value="VISA/MasterCard">VISA / MasterCard (mô phỏng)</option>
+                                <option value="Internet Banking">Internet Banking (mô phỏng)</option>
+                            }
+                        </select>
+                        <button type="submit" class="btn btn-success">Xác nhận thanh toán và xuất vé</button>
+                    </form>
+                }
+                else
+                {
+                    <p class="alert alert-info mb-0">Liên hệ quầy thu ngân để thanh toán đơn giữ chỗ.</p>
+                }
             </div>
         </div>
     </div>
 </div>
+@section Scripts {
+    <script>
+        const countdown = document.getElementById('holdCountdown');
+        const expiresAt = performance.now() + Number(countdown.dataset.seconds) * 1000;
+        const format = value => String(value).padStart(2, '0');
+
+        function displayHoldTime() {
+            const seconds = Math.max(0, Math.ceil((expiresAt - performance.now()) / 1000));
+            countdown.textContent = seconds ? format(Math.floor(seconds / 60)) + ':' + format(seconds % 60) : 'Đã hết hạn';
+            if (!seconds) {
+                document.querySelectorAll('[data-hold-action] button').forEach(button => button.disabled = true);
+                return;
+            }
+            window.setTimeout(displayHoldTime, 250);
+        }
+
+        displayHoldTime();
+    </script>
+}

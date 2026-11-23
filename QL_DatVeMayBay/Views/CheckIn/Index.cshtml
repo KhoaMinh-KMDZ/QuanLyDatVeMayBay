@@ -1,4 +1,5 @@
-﻿@using System.Data
+@using System.Data
+@using QRCoder
 @{
     ViewData["Title"] = "Check-in Trực tuyến & Thẻ lên máy bay";
     var dtVes = ViewBag.DanhSachVe as DataTable;
@@ -12,10 +13,10 @@
                 <p class="text-muted small mb-3">Nhập mã đặt chỗ (PNR) và họ tên hành khách để nhận Thẻ lên máy bay điện tử (Boarding Pass).</p>
                 <form method="get" asp-action="Index" class="row g-2">
                     <div class="col-md-5">
-                        <input type="text" name="maDatCho" class="form-control form-control-lg" placeholder="Mã PNR (VD: PNR00001)" value="@Context.Request.Query["maDatCho"]" required />
+                        <input type="text" name="maDatCho" maxlength="15" aria-label="Mã đặt chỗ" class="form-control form-control-lg" placeholder="Mã PNR (VD: PNR00001)" value="@Context.Request.Query["maDatCho"]" required />
                     </div>
                     <div class="col-md-5">
-                        <input type="text" name="tenHanhKhach" class="form-control form-control-lg" placeholder="Họ tên hành khách (tùy chọn)" value="@Context.Request.Query["tenHanhKhach"]" />
+                        <input type="text" name="tenHanhKhach" maxlength="50" aria-label="Họ tên hành khách" class="form-control form-control-lg" placeholder="Họ tên đầy đủ của hành khách" value="@Context.Request.Query["tenHanhKhach"]" required />
                     </div>
                     <div class="col-md-2">
                         <button type="submit" class="btn btn-sky btn-lg w-100">Tìm vé</button>
@@ -92,9 +93,14 @@
                                 </div>
                             </div>
                             <div class="col-md-4 text-center">
-                                <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=BP_@maVe|@v["MaChuyenBay"]|SEAT_@v["SoGhe"]" alt="Boarding Pass QR" class="img-fluid mb-2 border p-2 rounded" />
-                                <div class="small fw-semibold">Cửa khởi hành: <span class="text-danger">GATE 14</span></div>
-                                <div class="text-muted" style="font-size: 0.75rem;">Cửa đóng 15 phút trước giờ cất cánh</div>
+                                @{
+                                    using var qrData = QRCodeGenerator.GenerateQrCode($"BP-{v["MaChuyenBay"]}-{maVe}", QRCodeGenerator.ECCLevel.M);
+                                    using var qrCode = new PngByteQRCode(qrData);
+                                    string qrImage = Convert.ToBase64String(qrCode.GetGraphic(5));
+                                }
+                                <img src="data:image/png;base64,@qrImage" alt="Mã QR thẻ lên máy bay mẫu" class="img-fluid mb-2 border p-2 rounded" />
+                                <div class="small">Thẻ mẫu · Cửa khởi hành do hãng thông báo</div>
+                                <button type="button" class="btn btn-outline-primary btn-sm mt-2 d-print-none" onclick="window.print()">In thẻ</button>
                             </div>
                         </div>
                     </div>
@@ -110,16 +116,24 @@
                             <h6 class="fw-bold mt-2 mb-1">@v["TenHanhKhach"] — Ghế @v["SoGhe"] (@v["TenHangGhe"])</h6>
                             <div class="small text-muted">Chuyến @v["MaChuyenBay"]: @v["ThanhPhoDi"] → @v["ThanhPhoDen"] • Khởi hành: @gioBay.ToString("HH:mm dd/MM/yyyy")</div>
                         </div>
-                        @if (trangThai == "Đã xuất vé")
+                        @if (trangThai == "Đã xuất vé" && Convert.ToInt32(v["CoTheCheckIn"]) == 1)
                         {
                             <form method="post" asp-action="ConfirmCheckIn">
                                 <input type="hidden" name="maVe" value="@maVe" />
                                 <input type="hidden" name="maDatCho" value="@v["MaDatCho"]" />
                                 <input type="hidden" name="tenHanhKhach" value="@Context.Request.Query["tenHanhKhach"]" />
+                                <label class="form-check mb-2">
+                                    <input type="checkbox" name="chapNhanAnToan" value="true" required class="form-check-input" />
+                                    Tôi đồng ý tuân thủ quy định về hành lý và vật phẩm nguy hiểm.
+                                </label>
                                 <button type="submit" class="btn btn-success rounded-pill px-4">
                                     <i class="bi bi-check2-circle me-1"></i>Xác nhận Check-in & In thẻ
                                 </button>
                             </form>
+                        }
+                        else if (trangThai == "Đã xuất vé")
+                        {
+                            <span class="small text-muted">Check-in trong khoảng 24 giờ đến 60 phút trước giờ khởi hành.</span>
                         }
                     </div>
                 </div>

@@ -1,8 +1,12 @@
-﻿using QL_DatVeMayBay.Data;
+using System.Data;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
+using QL_DatVeMayBay.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllersWithViews();
+builder.Services.AddControllersWithViews(options => options.Filters.Add(new AutoValidateAntiforgeryTokenAttribute()));
+builder.Services.AddHostedService<ExpiredBookingCleanup>();
 
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddSession(options =>
@@ -27,6 +31,26 @@ app.UseStaticFiles();
 
 app.UseRouting();
 app.UseSession();
+app.Use(async (context, next) =>
+{
+    if (context.Session.GetString("UserType") == "NV")
+    {
+        object? currentRole = DatabaseHelper.ExecuteScalar(
+            "SELECT RoleID FROM NhanVien WHERE MaNV = @MaNV AND TrangThai = 1",
+            CommandType.Text, new SqlParameter("@MaNV", context.Session.GetString("UserId")));
+        if (currentRole is int role)
+        {
+            if (context.Session.GetInt32("RoleID") != role)
+                context.Session.Clear();
+        }
+        else
+        {
+            context.Session.Clear();
+        }
+    }
+
+    await next(context);
+});
 app.UseAuthorization();
 
 app.MapControllerRoute(

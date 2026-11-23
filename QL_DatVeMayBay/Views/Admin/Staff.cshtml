@@ -1,0 +1,38 @@
+@using System.Data
+@model QL_DatVeMayBay.Models.StaffForm
+@{
+    bool create = string.IsNullOrEmpty(Model.MaNV);
+    ViewData["Title"] = create ? "Thêm nhân viên" : "Chỉnh sửa nhân viên";
+}
+<div class="container my-5">
+    <h1 class="h3">@ViewData["Title"]</h1>
+    <form method="post" asp-action="Staff" class="card p-4 mt-3">
+        <div asp-validation-summary="All" class="text-danger"></div>
+        <input asp-for="MaNV" type="hidden" />
+        <div class="row g-3">
+            <label class="col-md-6">Họ tên <input asp-for="TenNV" class="form-control" /></label>
+            <label class="col-md-6">Chức vụ <input asp-for="ChucVu" class="form-control" /></label>
+            <label class="col-md-6">Điện thoại <input asp-for="SDT" type="tel" class="form-control" /></label>
+            <label class="col-md-6">Email <input asp-for="Email" type="email" class="form-control" /></label>
+            <label class="col-md-6">Tài khoản <input asp-for="TaiKhoan" class="form-control" autocomplete="off" /></label>
+            <label class="col-md-6">
+                @(create ? "Mật khẩu ban đầu" : "Mật khẩu mới nếu cần đổi")
+                <input name="MatKhau" type="password" minlength="8" maxlength="128" required="@create" class="form-control" autocomplete="new-password" />
+            </label>
+            <label class="col-md-6">Lương (VNĐ) <input asp-for="Luong" type="number" min="0" step="1" class="form-control" /></label>
+            <label class="col-md-6">Vai trò
+                <select asp-for="RoleID" class="form-select">
+                    <option value="">Chọn vai trò</option>
+                    @foreach (DataRow role in ((DataTable)ViewBag.Roles).Rows)
+                    {
+                        <option value="@role["RoleID"]">@role["TenRole"]</option>
+                    }
+                </select>
+            </label>
+        </div>
+        <div class="d-flex gap-2 mt-4">
+            <button class="btn btn-primary" type="submit">Lưu hồ sơ</button>
+            <a class="btn btn-outline-secondary" asp-action="Dashboard" asp-fragment="tab-staff">Quay lại</a>
+        </div>
+    </form>
+</div>

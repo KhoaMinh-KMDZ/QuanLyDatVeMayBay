@@ -1,6 +1,6 @@
-﻿@using System.Data
+@using System.Data
 @{
-    ViewData["Title"] = "Hóa đơn điện tử VAT";
+    ViewData["Title"] = "Hóa đơn mẫu";
     var hd = ViewBag.HoaDon as DataRow;
     var ves = ViewBag.DanhSachVe as DataTable;
 }
@@ -23,7 +23,7 @@
                 <div class="small text-muted">Tổng đài CSKH: 1900 1008 • Email: billing@skyvn.vn</div>
             </div>
             <div class="col-5 text-end">
-                <span class="badge bg-success mb-1">HÓA ĐƠN GIÁ TRỊ GIA TĂNG (E-INVOICE)</span>
+                <span class="badge bg-success mb-1">HÓA ĐƠN MẪU (E-INVOICE)</span>
                 <div class="fw-bold">Số HĐ: <span class="text-danger">@hd["MaHD"]</span></div>
                 <div class="small text-muted">Mã PNR: <strong>@hd["MaDatCho"]</strong></div>
                 <div class="small text-muted">Ngày lập: @Convert.ToDateTime(hd["NgayLap"]).ToString("dd/MM/yyyy HH:mm")</div>
@@ -41,7 +41,7 @@
             <div class="col-md-6 text-md-end mt-3 mt-md-0">
                 <div class="fw-bold text-uppercase text-secondary mb-1">Thông tin giao dịch</div>
                 <div>Hình thức thanh toán: <strong>@hd["PhuongThuc"]</strong></div>
-                <div>Mã chuẩn chi (TXN): <code>@hd["MaGiaoDich"]</code></div>
+                <div>Mã chuẩn chi (TXN): <code>@hd["MaGiaoDichNganHang"]</code></div>
                 <div>Trạng thái: <strong class="text-success">@hd["TrangThai"]</strong></div>
             </div>
         </div>
@@ -69,7 +69,7 @@
                                 <strong>@v["TenHanhKhach"]</strong> — Chuyến @v["MaChuyenBay"] (@v["ThanhPhoDi"] → @v["ThanhPhoDen"])
                             </td>
                             <td class="text-center">@v["TenHangGhe"] (@v["SoGhe"])</td>
-                            <td class="text-end">@Convert.ToDecimal(v["GiaVe"]).ToString("N0")</td>
+                            <td class="text-end">@((Convert.ToDecimal(v["GiaVe"]) + Convert.ToDecimal(v["PhiPhuTro"])).ToString("N0"))</td>
                         </tr>
                         stt++;
                     }
@@ -77,7 +77,7 @@
             </tbody>
             <tfoot>
                 <tr>
-                    <td colspan="4" class="text-end fw-semibold">Cộng tiền hàng (Đã bao gồm thuế & lệ phí sân bay):</td>
+                    <td colspan="4" class="text-end fw-semibold">Cộng tiền hàng:</td>
                     <td class="text-end">@Convert.ToDecimal(hd["TongTienGoc"]).ToString("N0") VNĐ</td>
                 </tr>
                 <tr>
@@ -86,7 +86,7 @@
                 </tr>
                 <tr class="table-primary">
                     <td colspan="4" class="text-end fw-bold fs-6">TỔNG CỘNG TIỀN THANH TOÁN:</td>
-                    <td class="text-end fw-bold fs-6 text-danger">@Convert.ToDecimal(hd["TongTienSauGiam"]).ToString("N0") VNĐ</td>
+                    <td class="text-end fw-bold fs-6 text-danger">@Convert.ToDecimal(hd["TongTien"]).ToString("N0") VNĐ</td>
                 </tr>
             </tfoot>
         </table>
@@ -98,7 +98,7 @@
             </div>
             <div class="col-6">
                 <div class="fw-bold">Đại diện SkyVN Airlines</div>
-                <div class="text-success fw-semibold mt-2"><i class="bi bi-patch-check-fill me-1"></i>Đã ký số điện tử hợp lệ</div>
+                <div class="text-muted mt-2">Bản in phục vụ kiểm thử đồ án.</div>
             </div>
         </div>
     </div>

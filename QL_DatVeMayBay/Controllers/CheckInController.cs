@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 using QL_DatVeMayBay.Data;
 using System.Data;
@@ -10,59 +10,62 @@ namespace QL_DatVeMayBay.Controllers
         [HttpGet]
         public IActionResult Index(string? maDatCho, string? tenHanhKhach)
         {
-            if (!string.IsNullOrWhiteSpace(maDatCho))
+            if (maDatCho is null && tenHanhKhach is null)
+                return View();
+
+            if (!string.IsNullOrWhiteSpace(maDatCho) && !string.IsNullOrWhiteSpace(tenHanhKhach))
             {
-                string query = @"
-                    SELECT * FROM vw_ChiTietVeVaHanhKhach 
-                    WHERE MaDatCho = @PNR 
-                      AND (@TenHK IS NULL OR TenHanhKhach LIKE N'%' + @TenHK + N'%')";
-
-                DataTable dt = DatabaseHelper.ExecuteQuery(
-                    query,
-                    CommandType.Text,
-                    new SqlParameter("@PNR", maDatCho.Trim().ToUpper()),
-                    new SqlParameter("@TenHK", string.IsNullOrWhiteSpace(tenHanhKhach) ? DBNull.Value : tenHanhKhach.Trim())
-                );
-
-                if (dt.Rows.Count > 0)
-                    ViewBag.DanhSachVe = dt;
-                else
-                    ViewBag.Error = "Không tìm thấy vé phù hợp với mã PNR và tên hành khách đã nhập!";
+                var tickets = DatabaseHelper.ExecuteQuery(@"
+                    SELECT v.*,
+                           CASE WHEN GETDATE() BETWEEN DATEADD(HOUR, -24, v.NgayGioBay) AND DATEADD(HOUR, -1, v.NgayGioBay)
+                                AND cb.TrangThai NOT IN (N'Đã hủy', N'Hoãn chuyến', N'Đã cất cánh')
+                                AND p.TrangThai = N'Đã thanh toán' THEN 1 ELSE 0 END AS CoTheCheckIn
+                    FROM vw_ChiTietVeVaHanhKhach v
+                    JOIN ChuyenBay cb ON cb.MaChuyenBay = v.MaChuyenBay
+                    JOIN PhieuDatCho p ON p.MaDatCho = v.MaDatCho
+                    WHERE v.MaDatCho = @PNR AND v.TenHanhKhach = @TenHK",
+                    CommandType.Text, new SqlParameter("@PNR", maDatCho.Trim()),
+                    new SqlParameter("@TenHK", tenHanhKhach.Trim()));
+                if (tickets.Rows.Count > 0)
+                {
+                    ViewBag.DanhSachVe = tickets;
+                    return View();
+                }
             }
+
+            ViewBag.Error = "Vui lòng nhập đúng mã PNR và họ tên đầy đủ của hành khách.";
             return View();
         }
 
         [HttpPost]
-        public IActionResult ConfirmCheckIn(string maVe, string maDatCho, string? tenHanhKhach)
+        public IActionResult ConfirmCheckIn(string maVe, string maDatCho, string tenHanhKhach, bool chapNhanAnToan)
         {
-            try
+            if (!ModelState.IsValid || !chapNhanAnToan || string.IsNullOrWhiteSpace(maVe) ||
+                string.IsNullOrWhiteSpace(maDatCho) || string.IsNullOrWhiteSpace(tenHanhKhach))
             {
-                DataTable dt = DatabaseHelper.ExecuteQuery(
-                    "SELECT TrangThaiVe, NgayGioBay FROM vw_ChiTietVeVaHanhKhach WHERE MaVe = @MaVe",
-                    CommandType.Text,
-                    new SqlParameter("@MaVe", maVe));
-
-                if (dt.Rows.Count == 0)
-                    throw new Exception("Không tìm thấy thông tin vé!");
-
-                string trangThai = dt.Rows[0]["TrangThaiVe"].ToString()!;
-                if (trangThai != "Đã xuất vé")
-                    throw new Exception($"Vé đang ở trạng thái '{trangThai}', không thể thực hiện Check-in!");
-
-                // Cập nhật trạng thái vé sang Đã Check-in (UC07)
-                DatabaseHelper.ExecuteNonQuery(
-                    "UPDATE VeMayBay SET TrangThai = N'Đã Check-in' WHERE MaVe = @MaVe",
-                    CommandType.Text,
-                    new SqlParameter("@MaVe", maVe));
-
-                TempData["Success"] = $"Check-in thành công cho vé {maVe}! Thẻ lên máy bay điện tử (Boarding Pass) đã được khởi tạo bên dưới.";
-            }
-            catch (Exception ex)
-            {
-                TempData["Error"] = ex.Message;
+                TempData["Error"] = "Vui lòng xác thực vé và đồng ý với quy định an toàn hành lý.";
+                return RedirectToAction(nameof(Index), new { maDatCho, tenHanhKhach });
             }
 
-            return RedirectToAction("Index", new { maDatCho, tenHanhKhach });
+            var changed = DatabaseHelper.ExecuteScalar(@"
+                DECLARE @Now datetime = GETDATE();
+                UPDATE v SET TrangThai = N'Đã Check-in'
+                FROM VeMayBay v JOIN ChuyenBay cb ON cb.MaChuyenBay = v.MaChuyenBay
+                JOIN PhieuDatCho p ON p.MaDatCho = v.MaDatCho
+                WHERE v.MaVe = @MaVe AND v.MaDatCho = @PNR AND v.TenHanhKhach = @TenHK
+                    AND v.TrangThai = N'Đã xuất vé' AND p.TrangThai = N'Đã thanh toán'
+                    AND cb.TrangThai NOT IN (N'Đã hủy', N'Hoãn chuyến', N'Đã cất cánh')
+                    AND @Now BETWEEN DATEADD(HOUR, -24, cb.NgayGioBay) AND DATEADD(HOUR, -1, cb.NgayGioBay);
+                SELECT @@ROWCOUNT;",
+                CommandType.Text, new SqlParameter("@MaVe", maVe),
+                new SqlParameter("@PNR", maDatCho.Trim()), new SqlParameter("@TenHK", tenHanhKhach.Trim()));
+
+            if (Convert.ToInt32(changed) == 1)
+                TempData["Success"] = "Đã check-in. Thẻ lên máy bay được hiển thị bên dưới.";
+            else
+                TempData["Error"] = "Vé chưa đủ điều kiện check-in hoặc đã ngoài khung 24 giờ đến 60 phút trước giờ bay.";
+
+            return RedirectToAction(nameof(Index), new { maDatCho, tenHanhKhach });
         }
     }
 }

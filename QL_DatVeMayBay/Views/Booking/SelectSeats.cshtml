@@ -1,4 +1,4 @@
-﻿@using System.Data
+@using System.Data
 @{
     ViewData["Title"] = "Chọn ghế ngồi & Thông tin hành khách";
     var cb = ViewBag.ChuyenBay as DataRow;
@@ -32,6 +32,17 @@
     </div>
 
     <form method="post" asp-action="CreateBooking" id="bookingForm">
+        @if (Context.Session.GetString("UserType") == "NV" && Context.Session.GetInt32("RoleID") == 3)
+        {
+            <label for="maKhachTaiQuay" class="form-label">Mã khách hàng đã có hồ sơ</label>
+            <input id="maKhachTaiQuay" name="maKhachTaiQuay" class="form-control mb-3" maxlength="10" required />
+        }
+        else if (Context.Session.GetString("UserType") != "KH")
+        {
+            <p class="alert alert-info">Đăng nhập tài khoản khách hàng trước khi xác nhận giữ chỗ.
+                <a asp-controller="Account" asp-action="Login" asp-route-returnUrl="@(Context.Request.Path + Context.Request.QueryString)">Đăng nhập</a>
+            </p>
+        }
         <input type="hidden" name="maChuyenBay" value="@cb["MaChuyenBay"]" />
 
         <div class="row g-4">
@@ -79,7 +90,8 @@
                                                 data-maghe="@maGhe"
                                                 data-soghe="@soGhe"
                                                 data-hang="@hang"
-                                                data-gia="@giaThucTe"
+                                                aria-pressed="false"
+                                                data-gia="@giaThucTe.ToString(System.Globalization.CultureInfo.InvariantCulture)"
                                                 @(isBooked ? "disabled" : "")>
                                             @soGhe
                                         </button>
@@ -105,41 +117,15 @@
                     <hr class="my-4" />
 
                     <div class="row g-3">
-                        <div class="col-md-6">
-                            <label class="form-label fw-semibold small">Dịch vụ phụ trợ (UC17)</label>
-                            <select name="dichVuPhuTro" class="form-select">
-                                <option value="">Không chọn dịch vụ thêm</option>
-                                <option value="Hành lý ký gửi 20kg">Hành lý ký gửi 20kg</option>
-                                <option value="Hành lý 30kg + Suất ăn nóng">Hành lý 30kg + Suất ăn nóng</option>
-                                <option value="Bảo hiểm trễ chuyến + Hành lý">Bảo hiểm trễ chuyến + Hành lý</option>
-                            </select>
-                        </div>
-
-                        <div class="col-md-6">
-                            <label class="form-label fw-semibold small">Mã Voucher khuyến mãi (UC20)</label>
-                            <select name="maKM" class="form-select">
-                                <option value="">-- Không áp dụng mã giảm giá --</option>
-                                @if (kms != null)
-                                {
-                                    foreach (DataRow km in kms.Rows)
-                                    {
-                                        <option value="@km["MaKM"]">
-                                            @km["MaKM"] - Giảm @km["PhanTramGiam"]% (Tối đa @Convert.ToDecimal(km["GiamToiDa"]).ToString("N0")đ)
-                                        </option>
-                                    }
-                                }
-                            </select>
-                        </div>
-
                         <div class="col-12">
                             <label class="form-label fw-semibold small">Ghi chú đơn đặt chỗ</label>
-                            <input type="text" name="ghiChuThem" class="form-control" placeholder="Yêu cầu hỗ trợ đặc biệt (nếu có)..." />
+                            <input type="text" name="ghiChuThem" maxlength="200" class="form-control" placeholder="Yêu cầu hỗ trợ đặc biệt (nếu có)..." />
                         </div>
                     </div>
 
                     <div class="d-flex justify-content-between align-items-center bg-light p-3 rounded-3 mt-4">
                         <div>
-                            <div class="small text-muted">Tạm tính tổng giá vé (<span id="seatCount">0</span> ghế)</div>
+                            <div class="small text-muted">Tạm tính giá vé và phụ phí (<span id="seatCount">0</span> ghế)</div>
                             <div class="fs-4 fw-bold text-danger" id="totalPrice">0 VNĐ</div>
                         </div>
                         <button type="submit" class="btn btn-sky btn-lg px-4 rounded-pill">
@@ -152,79 +138,98 @@
     </form>
 </div>
 
+<template id="passengerTemplate">
+<div class="border rounded-3 p-3 mb-3 bg-white" data-passenger-seat>
+    <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="badge bg-success" data-seat-description></span>
+        <span class="fw-bold text-primary" data-seat-price></span>
+    </div>
+    <input type="hidden" name="selectedMaGhe" />
+    <div class="row g-2">
+        <div class="col-md-5">
+            <input type="text" name="tenHanhKhach" aria-label="Họ tên hành khách" class="form-control form-control-sm" placeholder="Họ tên hành khách *" maxlength="50" required />
+        </div>
+        <div class="col-md-4">
+            <input type="text" name="cccdHanhKhach" aria-label="CCCD hoặc hộ chiếu" class="form-control form-control-sm" placeholder="CCCD / Hộ chiếu *" maxlength="30" required />
+        </div>
+        <div class="col-md-3">
+            <select name="loaiHanhKhach" aria-label="Loại hành khách" class="form-select form-select-sm">
+                <option value="Người lớn">Người lớn</option>
+                <option value="Trẻ em">Trẻ em</option>
+                <option value="Em bé">Em bé</option>
+            </select>
+        </div>
+        <div class="col-12">
+            <label class="form-label small">Dịch vụ phụ trợ</label>
+            <select name="dichVuPhuTro" aria-label="Dịch vụ phụ trợ" class="form-select form-select-sm">
+                <option value="">Không chọn thêm</option>
+            </select>
+        </div>
+    </div>
+</div>
+</template>
+
 @section Scripts {
     <script>
         const selectedSeats = new Map();
+        const services = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(
+            ((DataTable)ViewBag.DichVu).AsEnumerable().Select(row => new {
+                code = row.Field<string>("MaDichVu"),
+                name = row.Field<string>("TenDichVu"),
+                price = row.Field<decimal>("DonGia")
+            })));
         const defaultName = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(defaultName));
         const defaultCCCD = @Html.Raw(System.Text.Json.JsonSerializer.Serialize(defaultCCCD));
 
-        document.querySelectorAll('.seat-btn').forEach(btn => {
-            btn.addEventListener('click', function () {
-                const maGhe = this.dataset.maghe;
-                const soGhe = this.dataset.soghe;
-                const hang = this.dataset.hang;
-                const gia = parseFloat(this.dataset.gia);
+        const passengerContainer = document.getElementById('passengerContainer');
+        const passengerTemplate = document.getElementById('passengerTemplate');
 
-                if (selectedSeats.has(maGhe)) {
-                    selectedSeats.delete(maGhe);
-                    this.classList.remove('btn-success', 'text-white');
-                    this.classList.add(hang === 'BUS' ? 'btn-outline-warning' : 'btn-outline-primary');
-                    if (hang === 'BUS') this.classList.add('text-dark');
+        document.querySelectorAll('.seat-btn:not(:disabled)').forEach(button => {
+            button.addEventListener('click', () => {
+                const { maghe: seatId, soghe, hang, gia } = button.dataset;
+                const price = Number(gia);
+                const selected = selectedSeats.get(seatId);
+                const regularColour = hang === 'BUS' ? 'btn-outline-warning' : 'btn-outline-primary';
+
+                if (selected) {
+                    selected.card.remove();
+                    selectedSeats.delete(seatId);
                 } else {
-                    selectedSeats.set(maGhe, { maGhe, soGhe, hang, gia });
-                    this.classList.remove('btn-outline-warning', 'btn-outline-primary', 'text-dark');
-                    this.classList.add('btn-success', 'text-white');
+                    const card = passengerTemplate.content.firstElementChild.cloneNode(true);
+                    card.dataset.passengerSeat = seatId;
+                    card.querySelector('[data-seat-description]').textContent = `Ghế ${soghe} (${hang})`;
+                    card.querySelector('[data-seat-price]').textContent = price.toLocaleString('vi-VN') + ' VNĐ';
+                    card.querySelector('[name=selectedMaGhe]').value = seatId;
+                    if (selectedSeats.size === 0) {
+                        card.querySelector('[name=tenHanhKhach]').value = defaultName;
+                        card.querySelector('[name=cccdHanhKhach]').value = defaultCCCD;
+                    }
+                    const service = card.querySelector('[name=dichVuPhuTro]');
+                    services.forEach(item => service.add(new Option(
+                        item.name + ' (' + item.price.toLocaleString('vi-VN') + ' VNĐ)', item.code)));
+                    service.addEventListener('change', updatePrice);
+                    passengerContainer.append(card);
+                    selectedSeats.set(seatId, { card, price });
                 }
-                renderPassengers();
+
+                button.classList.toggle(regularColour, Boolean(selected));
+                button.classList.toggle('btn-success', !selected);
+                button.classList.toggle('text-white', !selected);
+                if (hang === 'BUS') button.classList.toggle('text-dark', Boolean(selected));
+                button.setAttribute('aria-pressed', String(!selected));
+                document.getElementById('emptySeatAlert').hidden = selectedSeats.size > 0;
+                document.getElementById('seatCount').textContent = selectedSeats.size;
+                updatePrice();
             });
         });
 
-        function renderPassengers() {
-            const container = document.getElementById('passengerContainer');
+        function updatePrice() {
             let total = 0;
-            let idx = 0;
-
-            if (selectedSeats.size === 0) {
-                container.innerHTML = `<div class="alert alert-info small mb-0"><i class="bi bi-hand-index-thumb me-1"></i>Hãy nhấp chọn vị trí ghế trống trên sơ đồ bên trái để nhập thông tin hành khách.</div>`;
-                document.getElementById('seatCount').innerText = '0';
-                document.getElementById('totalPrice').innerText = '0 VNĐ';
-                return;
-            }
-
-            let html = '';
-            selectedSeats.forEach((seat) => {
-                total += seat.gia;
-                const prefillName = idx === 0 ? defaultName : '';
-                const prefillCCCD = idx === 0 ? defaultCCCD : '';
-                html += `
-                    <div class="border rounded-3 p-3 mb-3 bg-white">
-                        <div class="d-flex justify-content-between align-items-center mb-2">
-                            <span class="badge bg-success">Ghế ${seat.soGhe} (${seat.hang})</span>
-                            <span class="fw-bold text-primary">${seat.gia.toLocaleString('vi-VN')} VNĐ</span>
-                        </div>
-                        <input type="hidden" name="selectedMaGhe" value="${seat.maGhe}" />
-                        <div class="row g-2">
-                            <div class="col-md-5">
-                                <input type="text" name="tenHanhKhach" class="form-control form-control-sm" placeholder="Họ tên hành khách *" value="${prefillName}" required />
-                            </div>
-                            <div class="col-md-4">
-                                <input type="text" name="cccdHanhKhach" class="form-control form-control-sm" placeholder="CCCD / Hộ chiếu *" value="${prefillCCCD}" required />
-                            </div>
-                            <div class="col-md-3">
-                                <select name="loaiHanhKhach" class="form-select form-select-sm">
-                                    <option value="Người lớn">Người lớn</option>
-                                    <option value="Trẻ em">Trẻ em</option>
-                                    <option value="Em bé">Em bé</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>`;
-                idx++;
+            selectedSeats.forEach(({ card, price }) => {
+                const serviceCode = card.querySelector('[name=dichVuPhuTro]').value;
+                total += price + (services.find(item => item.code === serviceCode)?.price ?? 0);
             });
-
-            container.innerHTML = html;
-            document.getElementById('seatCount').innerText = selectedSeats.size;
-            document.getElementById('totalPrice').innerText = total.toLocaleString('vi-VN') + ' VNĐ';
+            document.getElementById('totalPrice').textContent = total.toLocaleString('vi-VN') + ' VNĐ';
         }
     </script>
 }
