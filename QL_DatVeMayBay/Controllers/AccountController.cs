@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 using QL_DatVeMayBay.Data;
+using QL_DatVeMayBay.Models;
 using System.Data;
 
 namespace QL_DatVeMayBay.Controllers
@@ -8,17 +9,23 @@ namespace QL_DatVeMayBay.Controllers
     public class AccountController : Controller
     {
         [HttpGet]
-        public IActionResult Login() => View();
+        public IActionResult Login(string? returnUrl) =>
+            View(new LoginForm { ReturnUrl = Url.IsLocalUrl(returnUrl) ? returnUrl : null });
 
         [HttpPost]
-        public IActionResult Login(string loginType, string taiKhoan, string matKhau)
+        [ValidateAntiForgeryToken]
+        public IActionResult Login(LoginForm form)
         {
-            if (string.IsNullOrWhiteSpace(taiKhoan) || string.IsNullOrWhiteSpace(matKhau))
-            {
-                ViewBag.Error = "Vui lòng nhập đầy đủ tài khoản và mật khẩu!";
-                return View();
-            }
+            form.ReturnUrl = Url.IsLocalUrl(form.ReturnUrl) ? form.ReturnUrl : null;
+            if (form.LoginType is not ("NV" or "KH"))
+                ModelState.AddModelError(nameof(form.LoginType), "Chọn đối tượng đăng nhập phù hợp.");
+            if (!ModelState.IsValid)
+                return View(form);
 
+            string loginType = form.LoginType;
+            string taiKhoan = form.TaiKhoan.Trim();
+            string matKhau = form.MatKhau;
+            string? returnUrl = form.ReturnUrl;
             if (loginType == "NV")
             {
                 // Đăng nhập Nhân viên (Ban Giám Đốc, Thu Ngân, Bán Vé, CSKH)
@@ -30,9 +37,10 @@ namespace QL_DatVeMayBay.Controllers
                     CommandType.Text,
                     new SqlParameter("@TaiKhoan", taiKhoan.Trim()));
 
-                if (dt.Rows.Count > 0 && dt.Rows[0]["MatKhau"].ToString() == matKhau)
+                if (dt.Rows.Count > 0 && dt.Rows[0].Field<string>("MatKhau") == matKhau)
                 {
                     DataRow r = dt.Rows[0];
+                    HttpContext.Session.Clear();
                     HttpContext.Session.SetString("UserType", "NV");
                     HttpContext.Session.SetString("UserId", r["MaNV"].ToString()!);
                     HttpContext.Session.SetString("UserName", $"{r["TenNV"]} ({r["TenRole"]})");
@@ -46,60 +54,89 @@ namespace QL_DatVeMayBay.Controllers
             {
                 // Đăng nhập Khách hàng qua SP sp_DangNhapKhachHang
                 DataTable dt = DatabaseHelper.ExecuteQuery(
-                    "sp_DangNhapKhachHang",
-                    CommandType.StoredProcedure,
-                    new SqlParameter("@TaiKhoan", taiKhoan.Trim()));
+                    "sp_DangNhapKhachHang", CommandType.StoredProcedure,
+                    new SqlParameter("@TaiKhoan", taiKhoan));
 
-                if (dt.Rows.Count > 0 && dt.Rows[0]["MatKhau"].ToString() == matKhau)
+                if (dt.Rows.Count == 0 && !taiKhoan.Contains('@'))
+                {
+                    string phone = NormalizePhone(taiKhoan);
+                    if (!string.Equals(phone, taiKhoan, StringComparison.Ordinal))
+                        dt = DatabaseHelper.ExecuteQuery("sp_DangNhapKhachHang", CommandType.StoredProcedure,
+                            new SqlParameter("@TaiKhoan", phone));
+                }
+
+                if (dt.Rows.Count > 0 && dt.Rows[0].Field<string>("MatKhau") == matKhau)
                 {
                     DataRow r = dt.Rows[0];
+                    HttpContext.Session.Clear();
                     HttpContext.Session.SetString("UserType", "KH");
                     HttpContext.Session.SetString("UserId", r["MaKH"].ToString()!);
                     HttpContext.Session.SetString("UserName", r["TenKH"].ToString()!);
                     HttpContext.Session.SetString("UserEmail", r["Email"]?.ToString() ?? "");
-                    HttpContext.Session.SetString("UserCCCD", r["CCCD"]?.ToString() ?? r["HoChieu"]?.ToString() ?? "");
+                    HttpContext.Session.SetString("UserCCCD", r.Field<string>("CCCD") ?? r.Field<string>("HoChieu") ?? "");
 
+                    if (Url.IsLocalUrl(returnUrl))
+                        return LocalRedirect(returnUrl);
                     return RedirectToAction("Index", "Home");
                 }
             }
 
-            ViewBag.Error = "Tài khoản hoặc mật khẩu không chính xác (hoặc tài khoản đã bị khóa)!";
-            return View();
+            ModelState.AddModelError("", "Tài khoản hoặc mật khẩu không chính xác, hoặc tài khoản đã bị khóa.");
+            return View(form);
         }
 
         [HttpGet]
-        public IActionResult Register() => View();
+        public IActionResult Register(string? returnUrl) =>
+            View(new RegisterForm { ReturnUrl = Url.IsLocalUrl(returnUrl) ? returnUrl : null });
 
         [HttpPost]
-        public IActionResult Register(string tenKH, string gioiTinh, DateTime ngaySinh, string sdt, string email, string matKhau, string diaChi, string loaiKhachHang, string? cccd, string? hoChieu, string quocTich)
+        [ValidateAntiForgeryToken]
+        public IActionResult Register(RegisterForm form)
         {
+            form.ReturnUrl = Url.IsLocalUrl(form.ReturnUrl) ? form.ReturnUrl : null;
+            if (form.NgaySinh?.Date > DateTime.Today)
+                ModelState.AddModelError(nameof(form.NgaySinh), "Ngày sinh không được ở tương lai.");
+            if (form.GioiTinh is not ("Nam" or "Nữ" or "Khác"))
+                ModelState.AddModelError(nameof(form.GioiTinh), "Chọn giới tính phù hợp.");
+            if (form.LoaiKhachHang is not ("Việt Nam" or "Nước ngoài" or "Doanh nghiệp"))
+                ModelState.AddModelError(nameof(form.LoaiKhachHang), "Chọn đối tượng khách phù hợp.");
+
+            string phone = NormalizePhone(form.Sdt ?? "");
+            string digits = phone.StartsWith('+') ? phone[1..] : phone;
+            if (digits.Length < 8 || phone.Length > 15 || digits.Any(digit => !char.IsAsciiDigit(digit)))
+                ModelState.AddModelError(nameof(form.Sdt), "Số điện thoại không hợp lệ.");
+            if (!ModelState.IsValid)
+                return View(form);
+
             try
             {
-                DataTable dt = DatabaseHelper.ExecuteQuery(
-                    "sp_DangKyKhachHang",
-                    CommandType.StoredProcedure,
-                    new SqlParameter("@TenKH", tenKH),
-                    new SqlParameter("@GioiTinh", gioiTinh),
-                    new SqlParameter("@NgaySinh", ngaySinh),
-                    new SqlParameter("@SDT", sdt),
+                string email = form.Email.Trim();
+                DataTable customers = DatabaseHelper.ExecuteQuery(
+                    "sp_DangKyKhachHang", CommandType.StoredProcedure,
+                    new SqlParameter("@TenKH", form.TenKH.Trim()),
+                    new SqlParameter("@GioiTinh", form.GioiTinh),
+                    new SqlParameter("@NgaySinh", SqlDbType.Date) { Value = form.NgaySinh!.Value.Date },
+                    new SqlParameter("@SDT", phone),
                     new SqlParameter("@Email", email),
-                    new SqlParameter("@MatKhau", matKhau),
-                    new SqlParameter("@DiaChi", string.IsNullOrWhiteSpace(diaChi) ? DBNull.Value : diaChi),
-                    new SqlParameter("@LoaiKhachHang", loaiKhachHang),
-                    new SqlParameter("@CCCD", string.IsNullOrWhiteSpace(cccd) ? DBNull.Value : cccd),
-                    new SqlParameter("@HoChieu", string.IsNullOrWhiteSpace(hoChieu) ? DBNull.Value : hoChieu),
-                    new SqlParameter("@QuocTich", string.IsNullOrWhiteSpace(quocTich) ? "Việt Nam" : quocTich)
-                );
+                    new SqlParameter("@MatKhau", form.MatKhau),
+                    new SqlParameter("@DiaChi", (object?)form.DiaChi?.Trim() ?? DBNull.Value),
+                    new SqlParameter("@LoaiKhachHang", form.LoaiKhachHang),
+                    new SqlParameter("@CCCD", (object?)form.Cccd?.Trim() ?? DBNull.Value),
+                    new SqlParameter("@HoChieu", (object?)form.HoChieu?.Trim() ?? DBNull.Value),
+                    new SqlParameter("@QuocTich", string.IsNullOrWhiteSpace(form.QuocTich) ? "Việt Nam" : form.QuocTich.Trim()));
 
-                TempData["Success"] = $"Đăng ký thành công! Mã khách hàng của bạn là {dt.Rows[0]["MaKH"]}. Vui lòng đăng nhập.";
-                return RedirectToAction("Login");
+                TempData["Success"] = $"Đăng ký thành công. Mã khách hàng là {customers.Rows[0]["MaKH"]}.";
+                return RedirectToAction(nameof(Login), new { returnUrl = form.ReturnUrl });
             }
-            catch (SqlException ex)
+            catch (SqlException ex) when (ex.Number is 50000 or 2601 or 2627)
             {
-                ViewBag.Error = ex.Message;
-                return View();
+                ModelState.AddModelError("", "Email, số điện thoại hoặc giấy tờ đã được đăng ký.");
+                return View(form);
             }
         }
+
+        private static string NormalizePhone(string phone) =>
+            string.Concat(phone.Where(character => !char.IsWhiteSpace(character) && character is not ('-' or '.' or '(' or ')')));
 
         public IActionResult Logout()
         {

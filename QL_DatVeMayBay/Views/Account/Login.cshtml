@@ -1,4 +1,5 @@
-﻿@{
+@model QL_DatVeMayBay.Models.LoginForm
+@{
     ViewData["Title"] = "Đăng nhập hệ thống";
 }
 
@@ -8,48 +9,61 @@
             <div class="card card-modern p-4 p-md-5">
                 <div class="text-center mb-4">
                     <i class="bi bi-airplane-engines-fill text-primary display-5"></i>
-                    <h4 class="fw-bold mt-2">Đăng nhập SkyVN Airlines</h4>
-                    <p class="text-muted small">Chọn phân hệ Khách hàng hoặc Nhân viên đại lý</p>
+                    <h1 class="h4 fw-bold mt-2">Đăng nhập SkyVN Airlines</h1>
                 </div>
 
-                @if (TempData["Success"] != null)
+                @if (TempData["Success"] is string success)
                 {
-                    <div class="alert alert-success small">@TempData["Success"]</div>
-                }
-                @if (ViewBag.Error != null)
-                {
-                    <div class="alert alert-danger small">@ViewBag.Error</div>
+                    <div class="alert alert-success small">@success</div>
                 }
 
                 <form method="post" asp-action="Login">
+                    <div asp-validation-summary="ModelOnly" class="text-danger small" role="alert"></div>
+                    <input type="hidden" name="returnUrl" value="@Model.ReturnUrl" />
                     <div class="mb-3">
-                        <label class="form-label fw-semibold small">Đối tượng đăng nhập</label>
-                        <select name="loginType" class="form-select">
-                            <option value="KH">Hành khách (Đặt vé / Tra cứu / Check-in)</option>
-                            <option value="NV">Nhân viên / Quản trị Đại lý (RBAC)</option>
+                        <label for="loginType" class="form-label fw-semibold small">Đối tượng đăng nhập</label>
+                        <select id="loginType" name="loginType" class="form-select">
+                            <option value="KH" selected="@(Model.LoginType != "NV")">Hành khách</option>
+                            <option value="NV" selected="@(Model.LoginType == "NV")">Nhân viên / Quản trị</option>
                         </select>
+                        <span asp-validation-for="LoginType" class="text-danger small"></span>
                     </div>
 
                     <div class="mb-3">
-                        <label class="form-label fw-semibold small">Email / SĐT (hoặc Tài khoản NV)</label>
-                        <input type="text" name="taiKhoan" class="form-control" placeholder="VD: duyenan@gmail.com hoặc admin" required />
+                        <label for="taiKhoan" class="form-label fw-semibold small">Email, số điện thoại hoặc tài khoản nhân viên</label>
+                        <input id="taiKhoan" type="text" name="taiKhoan" class="form-control" value="@Model.TaiKhoan"
+                               autocomplete="username" autocapitalize="none" spellcheck="false" maxlength="100" required />
+                        <span asp-validation-for="TaiKhoan" class="text-danger small"></span>
                     </div>
 
                     <div class="mb-4">
-                        <label class="form-label fw-semibold small">Mật khẩu</label>
-                        <input type="password" name="matKhau" class="form-control" placeholder="Mặc định dữ liệu mẫu: 123456" required />
+                        <label for="matKhau" class="form-label fw-semibold small">Mật khẩu</label>
+                        <div class="input-group">
+                            <input id="matKhau" type="password" name="matKhau" class="form-control"
+                                   autocomplete="current-password" autocapitalize="none" spellcheck="false" required />
+                            <button type="button" class="btn btn-outline-secondary" data-password-toggle
+                                    aria-label="Hiện hoặc ẩn mật khẩu" aria-controls="matKhau" aria-pressed="false">Hiện</button>
+                        </div>
+                        <span asp-validation-for="MatKhau" class="text-danger small"></span>
                     </div>
 
-                    <button type="submit" class="btn btn-sky w-100 py-2 rounded-pill">Đăng nhập ngay</button>
+                    <button type="submit" class="btn btn-sky w-100 py-2 rounded-pill">Đăng nhập</button>
                 </form>
+                <p class="small mt-3 mb-0">
+                    Chưa có tài khoản hành khách?
+                    <a asp-action="Register" asp-route-returnUrl="@Model.ReturnUrl">Đăng ký</a>
+                </p>
 
                 <div class="mt-4 pt-3 border-top small text-muted">
-                    <div class="fw-semibold text-dark mb-1">Tài khoản test nhanh (Mật khẩu: <code>123456</code>):</div>
-                    <div>• Khách hàng: <code>duyenan@gmail.com</code> | <code>ngocnhu@gmail.com</code></div>
-                    <div>• Ban Giám Đốc: <code>admin</code> | Thu ngân: <code>thungan</code></div>
-                    <div>• Bán vé: <code>banve</code> | CSKH: <code>cskh</code></div>
+                    <div class="fw-semibold text-dark mb-1">Tài khoản demo dùng mật khẩu <code>123456</code></div>
+                    <div>Hành khách <code>duyenan@gmail.com</code> · <code>ngocnhu@gmail.com</code></div>
+                    <div>Nhân viên <code>admin</code> · <code>thungan</code> · <code>banve</code> · <code>cskh</code></div>
                 </div>
             </div>
         </div>
     </div>
 </div>
+
+@section Scripts {
+    <script src="~/js/password-toggle.js" asp-append-version="true"></script>
+}
